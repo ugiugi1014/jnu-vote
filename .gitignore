@@ -15,3 +15,17 @@ node_modules
 
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments/chain-31337
+
+# Docs & media
+*.md
+*.png
+*.jpg
+*.jpeg
+diagrams/
+build/
+
+# VSCode Hardhat auto-generated
+.vscode_hardhat_config_*.ts
+
+# OS
+.DS_Store
