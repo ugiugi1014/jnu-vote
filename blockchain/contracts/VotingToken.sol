@@ -49,9 +49,38 @@ contract VotingToken is ERC20, Ownable {
         emit TokenIssued(to);
     }
 
+    // 선거 관리자가 유권자 목록에 일괄 토큰 발급 (선거 생성 시 사용)
+    // 이미 토큰이 있는 주소는 건너뜀 (revert 없이 continue)
+    function issueTokenBatch(address[] calldata voters) external {
+        require(electionAdmins[msg.sender], unicode"선거 관리자만 토큰을 발급할 수 있습니다.");
+        for (uint256 i = 0; i < voters.length; i++) {
+            if (balanceOf(voters[i]) == 0) {
+                _mint(voters[i], 1);
+                emit TokenIssued(voters[i]);
+            }
+        }
+    }
+
     // 토큰 보유 여부 확인
     function isTokenValid(address holder) public view returns (bool) {
         return balanceOf(holder) >= 1;
+    }
+
+    // 연결된 VotingSystem 컨트랙트 주소 (소각 권한 부여용)
+    address public votingSystem;
+
+    // 학교(owner)가 VotingSystem 주소 등록
+    function setVotingSystem(address _votingSystem) external onlyOwner {
+        require(_votingSystem != address(0), unicode"유효하지 않은 주소입니다.");
+        votingSystem = _votingSystem;
+    }
+
+    // 투표 완료 후 토큰 소각 (VotingSystem 컨트랙트만 호출 가능)
+    // 소각 후 다음 선거에서 토큰을 새로 발급받을 수 있게 됨
+    function burnToken(address voter) external {
+        require(msg.sender == votingSystem, unicode"VotingSystem만 소각할 수 있습니다.");
+        require(balanceOf(voter) >= 1, unicode"소각할 토큰이 없습니다.");
+        _burn(voter, 1);
     }
 
     // 투표 토큰은 전송 불가 - 전송되면 투표 권한이 타인에게 넘어갈 수 있음

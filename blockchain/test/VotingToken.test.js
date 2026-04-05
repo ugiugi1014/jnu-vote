@@ -125,4 +125,29 @@ describe("VotingToken", function () {
             token.removeElectionAdmin(voter1.address)
         ).to.be.reverted;
     });
+
+    // 테스트 13: 일괄 토큰 발급 확인
+    it("issueTokenBatch로 여러 유권자에게 한번에 토큰 발급 가능", async function () {
+        await token.addElectionAdmin(electionAdmin.address);
+        await token.connect(electionAdmin).issueTokenBatch([voter1.address, voter2.address]);
+        expect(await token.balanceOf(voter1.address)).to.equal(1);
+        expect(await token.balanceOf(voter2.address)).to.equal(1);
+    });
+
+    // 테스트 14: 일괄 발급 시 이미 토큰 있는 주소는 건너뜀 (revert 없이)
+    it("issueTokenBatch는 이미 토큰 있는 주소를 건너뜀", async function () {
+        await token.addElectionAdmin(electionAdmin.address);
+        await token.connect(electionAdmin).issueToken(voter1.address);
+        // voter1은 이미 토큰 있음 → 건너뛰고 voter2만 발급
+        await token.connect(electionAdmin).issueTokenBatch([voter1.address, voter2.address]);
+        expect(await token.balanceOf(voter1.address)).to.equal(1);
+        expect(await token.balanceOf(voter2.address)).to.equal(1);
+    });
+
+    // 테스트 15: 선거 관리자가 아니면 일괄 발급 불가
+    it("선거 관리자가 아니면 issueTokenBatch 불가", async function () {
+        await expect(
+            token.connect(voter1).issueTokenBatch([voter2.address])
+        ).to.be.reverted;
+    });
 });
