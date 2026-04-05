@@ -1,31 +1,19 @@
 node_modules
-.env
 
-# Hardhat files
-/cache
-/artifacts
+# HTML 문서
+*.html
 
-# TypeChain files
-/typechain
-/typechain-types
-
-# solidity-coverage files
-/coverage
-/coverage.json
-
-# Hardhat Ignition default folder for deployments against a local node
-ignition/deployments/chain-31337
-
-# Docs & media
-*.md
-*.png
-*.jpg
-*.jpeg
-diagrams/
+# ZKP 관련 바이너리/빌드 파일
+*.ptau
+*.zkey
+*.sym
+*.json
 build/
+circuits/
+circom/
+scripts/
+zkp-vote/
 
-# VSCode Hardhat auto-generated
-.vscode_hardhat_config_*.ts
-
-# OS
-.DS_Store
+# 이미지
+*.png
+*.svg
