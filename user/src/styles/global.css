@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+  background-color: #f0f2f5;
+  min-height: 100vh;
+}
+
+/* ── 공통 네비 ── */
+.nav-bar {
+  background: #ffffff;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 0 3%;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.nav-back {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 15px; color: #444; cursor: pointer;
+  background: none; border: none; font-family: inherit;
+  padding: 6px 0; transition: color 0.15s;
+}
+.nav-back:hover { color: #111; }
+.nav-logo-img { width: 36px; height: 36px; object-fit: contain; }
+
+/* ── 헤더 ── */
+.header {
+  background: #ffffff;
+  border-bottom: 1px solid #e8e8e8;
+  padding: 0 3%; height: 64px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-logo-img { width: 44px; height: 44px; object-fit: contain; }
+.header-title-group { display: flex; flex-direction: column; }
+.header-title { font-size: clamp(14px, 1.5vw, 18px); font-weight: 700; color: #111; letter-spacing: -0.4px; line-height: 1.2; }
+.header-subtitle { font-size: clamp(9px, 1vw, 11px); color: #aaa; letter-spacing: 0.2px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.header-user { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #555; }
+.logout-button {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border: 1.5px solid #e0e0e0; border-radius: 8px;
+  background: transparent; font-size: 14px; color: #444; cursor: pointer;
+  font-family: inherit; transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.logout-button:hover { background: #f5f5f5; border-color: #ccc; }
+
+/* ── 메인 래퍼 ── */
+.main { width: 100%; padding: 36px 3% 80px; box-sizing: border-box; }
+.main-narrow { width: 100%; padding: 36px 3% 120px; box-sizing: border-box; }
+
+/* ── 공통 배지 ── */
+.badge { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+.badge-outline { border: 1.5px solid #ddd; color: #666; background: transparent; }
+.badge-active { background: #22c55e; color: #fff; }
+.badge-ended { background: #6b7280; color: #fff; }
+.badge-voted { border: 1.5px solid #ddd; color: #666; background: transparent; }
+
+/* ── 섹션 타이틀 ── */
+.section-title { font-size: 18px; font-weight: 700; color: #111; letter-spacing: -0.4px; margin-bottom: 16px; }
+
+@media (max-width: 600px) {
+  .header { padding: 0 4%; }
+  .main, .main-narrow { padding: 24px 4% 100px; }
+  .nav-bar { padding: 0 4%; }
+  .header-subtitle { display: none; }
+}
