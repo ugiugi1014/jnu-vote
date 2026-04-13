@@ -5,27 +5,17 @@ import "../styles/VoteListPage.css";
 
 const LOGO = "/src/jejun.png";
 
-/* 인증 상태 배지 */
 function AuthStatus({ status, onGoUpload }) {
   if (status === "approved") {
-    return <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>🟢 인증완료</span>;
+    return <span className="auth-approved">🟢 인증완료</span>;
   }
   if (status === "pending") {
-    return <span style={{ fontSize: 13, color: "#a16207", fontWeight: 600 }}>🟡 검토중</span>;
+    return <span className="auth-pending">🟡 검토중</span>;
   }
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ fontSize: 13, color: "#dc2626", fontWeight: 600 }}>🔴 미인증</span>
-      <button
-        onClick={onGoUpload}
-        style={{
-          padding: "5px 12px", background: "#1a5fa8", color: "#fff",
-          border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600,
-          cursor: "pointer", fontFamily: "inherit",
-        }}
-      >
-        인증하기
-      </button>
+    <span className="auth-none-wrap">
+      <span className="auth-none">🔴 미인증</span>
+      <button className="auth-btn" onClick={onGoUpload}>인증하기</button>
     </span>
   );
 }
@@ -33,7 +23,6 @@ function AuthStatus({ status, onGoUpload }) {
 export default function VoteListPage({ studentId, onLogout, onVote, onResult, userStatus, onGoUpload }) {
   const [activeTab, setActiveTab] = useState("active");
   const votes = VOTES[activeTab] || [];
-
   const isApproved = userStatus === "approved";
 
   const handleVoteClick = (vote) => {
@@ -44,17 +33,21 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
   return (
     <>
       <header className="header">
-        <div className="header-left">
+        <div className="header-inner">
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flex: 1 }}>
           <img src={LOGO} alt="제주대학교 로고" className="header-logo-img" />
-          <div className="header-title-group">
-            <span className="header-title">제주대학교 전자투표</span>
-            <span className="header-subtitle">Jeju National University E-Voting</span>
+            <div className="header-title-group">
+              <span className="header-title">제주대학교 전자투표</span>
+              <span className="header-subtitle">Jeju National University E-Voting</span>
+            </div>
           </div>
-        </div>
-        <div className="header-right">
-          <div className="header-user"><Icon.User /><span>{studentId}</span></div>
-          <AuthStatus status={userStatus} onGoUpload={onGoUpload} />
-          <button className="logout-button" onClick={onLogout}><Icon.Logout />로그아웃</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="header-user"><Icon.User /><span>{studentId}</span></div>
+              <button className="logout-button" onClick={onLogout}><Icon.Logout />로그아웃</button>
+            </div>
+            <AuthStatus status={userStatus} onGoUpload={onGoUpload} />
+          </div>
         </div>
       </header>
 
@@ -117,4 +110,3 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
     </>
   );
 }
-

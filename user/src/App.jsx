@@ -18,7 +18,7 @@ export default function App() {
   const handleLogin = (id) => {
     setStudentId(id);
     if (id === "admin") { setPage("admin"); return; }
-    if (id === "2026") {setUserStatus("approved"); return; }
+    if (id === "user") {setUserStatus("approved");}
     setPage("list");
   };
 
