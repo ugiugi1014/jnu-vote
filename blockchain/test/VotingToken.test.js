@@ -106,3 +106,4 @@ describe("VotingToken", function () {
         await expect(token.issueTokenBatch([])).to.not.be.reverted;
     });
 });
+

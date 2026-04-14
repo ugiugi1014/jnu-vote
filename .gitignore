@@ -1,6 +1,9 @@
 node_modules
 .env
 
+# HTML 문서
+*.html
+
 # Hardhat files
 /cache
 /artifacts
@@ -21,10 +24,20 @@ ignition/deployments/chain-31337
 *.png
 *.jpg
 *.jpeg
-*.html
 *.xml
+*.svg
 diagrams/
 build/
+circuits/
+circom/
+scripts/
+zkp-vote/
+
+# ZKP 관련 바이너리/빌드 파일
+*.ptau
+*.zkey
+*.sym
+*.json
 
 # VSCode Hardhat auto-generated
 .vscode_hardhat_config_*.ts
