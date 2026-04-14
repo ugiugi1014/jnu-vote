@@ -21,6 +21,8 @@ ignition/deployments/chain-31337
 *.png
 *.jpg
 *.jpeg
+*.html
+*.xml
 diagrams/
 build/
 
@@ -29,3 +31,8 @@ build/
 
 # OS
 .DS_Store
+Thumbs.db
+
+# Server
+server/node_modules
+server/.env
