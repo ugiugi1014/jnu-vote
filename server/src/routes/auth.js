@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
@@ -120,6 +121,23 @@ router.post("/verify-code", async (req, res) => {
       [authCode.id]
     );
 
+    // 서버 시크릿 조회 또는 생성 (인앱 지갑 재생성용)
+    const [secrets] = await pool.query(
+      "SELECT secret FROM user_secrets WHERE email = ?",
+      [email]
+    );
+
+    let serverSecret;
+    if (secrets.length > 0) {
+      serverSecret = secrets[0].secret;
+    } else {
+      serverSecret = crypto.randomBytes(32).toString("hex");
+      await pool.query(
+        "INSERT INTO user_secrets (email, secret) VALUES (?, ?)",
+        [email, serverSecret]
+      );
+    }
+
     // JWT 발급 (24시간 유효)
     const token = jwt.sign(
       { email },
@@ -127,7 +145,7 @@ router.post("/verify-code", async (req, res) => {
       { expiresIn: "24h" }
     );
 
-    res.json({ message: "인증 성공", token });
+    res.json({ message: "인증 성공", token, serverSecret });
   } catch (err) {
     console.error("verify-code 오류:", err);
     res.status(500).json({ error: "인증 코드 검증에 실패했습니다." });

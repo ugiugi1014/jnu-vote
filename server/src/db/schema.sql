@@ -57,6 +57,15 @@ CREATE TABLE auth_codes (
   created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 유저별 서버 시크릿 (인앱 지갑 재생성용)
+-- 지갑 개인키 = KDF(웹메일 + server_secret)
+CREATE TABLE user_secrets (
+  id          INT PRIMARY KEY AUTO_INCREMENT,
+  email       VARCHAR(100) UNIQUE NOT NULL,
+  secret      VARCHAR(64)  NOT NULL,
+  created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 개표 결과 (블록체인 캐시)
 CREATE TABLE tally_results (
   id           INT PRIMARY KEY AUTO_INCREMENT,
