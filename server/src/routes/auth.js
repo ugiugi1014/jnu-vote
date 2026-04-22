@@ -28,8 +28,9 @@ router.post("/send-code", async (req, res) => {
   try {
     const { email } = req.body;
 
-    // 이메일 형식 확인 (@stu.jejunu.ac.kr 도메인만 허용)
-    if (!email || !email.endsWith("@stu.jejunu.ac.kr")) {
+    // 이메일 형식 확인 (관리자 이메일 또는 @stu.jejunu.ac.kr 도메인만 허용)
+    const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim());
+    if (!email || (!email.endsWith("@stu.jejunu.ac.kr") && !adminEmails.includes(email))) {
       return res.status(400).json({ error: "제주대학교 학생 이메일(@stu.jejunu.ac.kr)만 사용 가능합니다." });
     }
 
