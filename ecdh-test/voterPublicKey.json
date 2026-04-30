@@ -1,0 +1,8 @@
+{
+  "crv": "P-256",
+  "ext": true,
+  "key_ops": [],
+  "kty": "EC",
+  "x": "EXak738L-aPaK2LzIec3SzXJmT7JxUaRsIGbGF-sJNk",
+  "y": "tAY1BDNLbzEVE_PoTKk8gKi14H9r5ceTOXyr6INVJu8"
+}

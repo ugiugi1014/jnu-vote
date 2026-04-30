@@ -1,4 +1,4 @@
-// 🔑 키 생성
+// 키 생성
 async function generateKeyPair() {
   return await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
@@ -7,7 +7,7 @@ async function generateKeyPair() {
   );
 }
 
-// 🔐 공유키 생성
+// 공유키 생성
 async function deriveSharedKey(myPrivateKey, theirPublicKey) {
   return await crypto.subtle.deriveKey(
     { name: "ECDH", public: theirPublicKey },
@@ -22,7 +22,7 @@ async function deriveSharedKey(myPrivateKey, theirPublicKey) {
 // 핵심 함수 (JSX 삽입용)
 // ==========================================
 
-// 🧑‍💻 유권자 등록
+// 유권자 등록
 async function registerVoter() {
   const keyPair = await generateKeyPair();
 
