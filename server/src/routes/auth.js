@@ -22,15 +22,23 @@ function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// 관리자 이메일 화이트리스트 (.env의 ADMIN_EMAILS 쉼표 구분)
+function isAdminEmail(email) {
+  const list = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(email.toLowerCase());
+}
+
 // POST /auth/send-code
 // 이메일로 인증 코드 발송
 router.post("/send-code", async (req, res) => {
   try {
     const { email } = req.body;
 
-    // 이메일 형식 확인 (관리자 이메일 또는 @stu.jejunu.ac.kr 도메인만 허용)
-    const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim());
-    if (!email || (!email.endsWith("@stu.jejunu.ac.kr") && !adminEmails.includes(email))) {
+    // 이메일 형식 확인: @stu.jejunu.ac.kr 도메인만 허용 (관리자 화이트리스트는 예외)
+    if (!email || (!email.endsWith("@stu.jejunu.ac.kr") && !isAdminEmail(email))) {
       return res.status(400).json({ error: "제주대학교 학생 이메일(@stu.jejunu.ac.kr)만 사용 가능합니다." });
     }
 
@@ -139,14 +147,15 @@ router.post("/verify-code", async (req, res) => {
       );
     }
 
-    // JWT 발급 (24시간 유효)
+    // JWT 발급 (24시간 유효) — 관리자 화이트리스트면 role=admin
+    const role = isAdminEmail(email) ? "admin" : "user";
     const token = jwt.sign(
-      { email },
+      { email, role },
       process.env.JWT_SECRET,
       { expiresIn: "24h" }
     );
 
-    res.json({ message: "인증 성공", token, serverSecret });
+    res.json({ message: "인증 성공", token, serverSecret, role });
   } catch (err) {
     console.error("verify-code 오류:", err);
     res.status(500).json({ error: "인증 코드 검증에 실패했습니다." });

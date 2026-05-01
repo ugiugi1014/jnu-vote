@@ -11,13 +11,12 @@ const ELECTION_STATUS = {
   TALLIED: "tallied",
 };
 
-// 관리자 전용 미들웨어
+// 관리자 전용 미들웨어 (JWT의 role 클레임 기준)
 function adminOnly(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ message: "로그인 필요" });
   }
-  const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim());
-  if (!adminEmails.includes(req.user.email)) {
+  if (req.user.role !== "admin") {
     return res.status(403).json({ message: "관리자 권한 필요" });
   }
   next();
