@@ -11,6 +11,14 @@ const ELECTION_STATUS = {
   TALLIED: "tallied",
 };
 
+// 응답으로 노출 가능한 elections 컬럼 (coord_private_key 제외)
+// 개표 등 백엔드 내부에서만 개인키가 필요할 때는 별도 SELECT 사용
+const ELECTION_PUBLIC_COLUMNS = `
+  id, title, description, start_time, end_time, status,
+  coord_public_key, contract_address,
+  total_voters, voted_count, created_at
+`;
+
 // 관리자 전용 미들웨어 (JWT의 role 클레임 기준)
 function adminOnly(req, res, next) {
   if (!req.user) {
@@ -22,9 +30,12 @@ function adminOnly(req, res, next) {
   next();
 }
 
-// 선거 존재 확인 함수
+// 선거 존재 확인 함수 (코디네이터 개인키는 절대 응답에 포함하지 않음)
 async function getElectionById(electionId) {
-  const [rows] = await db.query(`SELECT * FROM elections WHERE id=?`, [electionId]);
+  const [rows] = await db.query(
+    `SELECT ${ELECTION_PUBLIC_COLUMNS} FROM elections WHERE id=?`,
+    [electionId]
+  );
   return rows.length > 0 ? rows[0] : null;
 }
 
@@ -73,8 +84,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT id, title, description, start_time, end_time, status,
-              contract_address, total_voters, voted_count, created_at
+      `SELECT ${ELECTION_PUBLIC_COLUMNS}
        FROM elections
        ORDER BY created_at DESC`
     );
