@@ -71,7 +71,8 @@ router.post("/", auth, adminOnly, async (req, res) => {
 
     res.json({ message: "선거 생성 완료", election_id: result.insertId });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -91,7 +92,8 @@ router.get("/", async (req, res) => {
 
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -120,7 +122,8 @@ router.get("/:id", async (req, res) => {
 
     res.json({ election, candidates });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -160,7 +163,8 @@ router.put("/:id", auth, adminOnly, async (req, res) => {
 
     res.json({ message: "선거 수정 완료" });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -188,7 +192,8 @@ router.delete("/:id", auth, adminOnly, async (req, res) => {
 
     res.json({ message: "선거 삭제 완료" });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -215,7 +220,8 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
 
     res.json({ message: "선거 시작됨 (active)" });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -242,7 +248,8 @@ router.post("/:id/close", auth, adminOnly, async (req, res) => {
 
     res.json({ message: "선거 종료됨 (closed)" });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -268,7 +275,8 @@ router.post("/:id/contract", auth, adminOnly, async (req, res) => {
 
     res.json({ message: "컨트랙트 주소 저장 완료" });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -311,7 +319,8 @@ router.post("/:id/candidates", auth, adminOnly, async (req, res) => {
 
     res.json({ message: "후보 등록 완료", candidate_id: result.insertId });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -335,7 +344,8 @@ router.get("/:id/candidates", async (req, res) => {
 
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -368,7 +378,8 @@ router.delete("/:id/candidates/:candidateId", auth, adminOnly, async (req, res) 
 
     res.json({ message: "후보 삭제 완료" });
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -422,7 +433,8 @@ router.post("/:id/voters", auth, adminOnly, async (req, res) => {
     res.json({ message: "유권자 등록 완료" });
   } catch (err) {
     await conn.rollback();
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   } finally {
     conn.release();
   }
@@ -448,7 +460,8 @@ router.get("/:id/voters", auth, adminOnly, async (req, res) => {
 
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 
@@ -537,7 +550,8 @@ router.post("/:id/tally", auth, adminOnly, async (req, res) => {
     res.json({ message: "개표 결과 저장 완료 + tallied 처리 완료" });
   } catch (err) {
     await conn.rollback();
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   } finally {
     conn.release();
   }
@@ -565,7 +579,8 @@ router.get("/:id/tally", async (req, res) => {
 
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ message: "서버 오류", error: err.message });
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
   }
 });
 

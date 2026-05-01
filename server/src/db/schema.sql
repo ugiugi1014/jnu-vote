@@ -30,7 +30,8 @@ CREATE TABLE candidates (
   description      TEXT,
   candidate_index  INT          NOT NULL,  -- 컨트랙트에서 사용하는 인덱스 (1, 2, 3...)
   created_at       DATETIME     DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE
+  FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_candidate (election_id, candidate_index)
 );
 
 -- 유권자 (투표 시 동적 생성)

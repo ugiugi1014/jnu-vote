@@ -2,6 +2,24 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
+// 부팅 시 필수 환경변수 검증 — 누락이면 fail-fast
+const REQUIRED_ENV = [
+  "DB_HOST",
+  "DB_PORT",
+  "DB_USER",
+  "DB_PASSWORD",
+  "DB_NAME",
+  "JWT_SECRET",
+  "MAIL_USER",
+  "MAIL_PASS",
+];
+const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missingEnv.length > 0) {
+  console.error(`[FATAL] 환경변수 누락: ${missingEnv.join(", ")}`);
+  process.exit(1);
+}
+
+const pool = require("./db");
 const authRoutes = require("./routes/auth");
 const electionsRoutes = require("./routes/elections");
 
@@ -21,8 +39,15 @@ app.use(
 );
 app.use(express.json());
 
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
+// 헬스체크 — DB ping까지 포함해서 진짜 살아있는지 확인
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "ok" });
+  } catch (err) {
+    console.error("health check DB error:", err);
+    res.status(503).json({ status: "db_down" });
+  }
 });
 
 // 라우터 연결

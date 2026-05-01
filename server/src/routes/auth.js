@@ -5,7 +5,7 @@ const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
 
-// Gmail SMTP 설정
+// Gmail SMTP 설정 (TLS 검증 우회는 운영환경에서는 비활성화)
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -13,13 +13,17 @@ const transporter = nodemailer.createTransport({
     pass: process.env.MAIL_PASS,
   },
   tls: {
-    rejectUnauthorized: false,
+    rejectUnauthorized: process.env.NODE_ENV === "production",
   },
 });
 
-// 6자리 랜덤 코드 생성
+// 인증코드 brute-force 잠금 정책
+const LOCKOUT_WINDOW_MIN = 30; // 분
+const LOCKOUT_THRESHOLD = 10;  // 최근 윈도우 내 실패 시도 합계가 이 값 이상이면 잠금
+
+// 암호학적으로 안전한 6자리 랜덤 코드
 function generateCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 // 관리자 이메일 화이트리스트 (.env의 ADMIN_EMAILS 쉼표 구분)
@@ -31,6 +35,17 @@ function isAdminEmail(email) {
   return list.includes(email.toLowerCase());
 }
 
+// 이메일 단위 잠금 체크 (최근 윈도우 내 실패 시도 합산)
+async function isEmailLockedOut(email) {
+  const [rows] = await pool.query(
+    `SELECT COALESCE(SUM(attempts), 0) AS total
+     FROM auth_codes
+     WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)`,
+    [email, LOCKOUT_WINDOW_MIN]
+  );
+  return Number(rows[0].total) >= LOCKOUT_THRESHOLD;
+}
+
 // POST /auth/send-code
 // 이메일로 인증 코드 발송
 router.post("/send-code", async (req, res) => {
@@ -39,7 +54,14 @@ router.post("/send-code", async (req, res) => {
 
     // 이메일 형식 확인: @stu.jejunu.ac.kr 도메인만 허용 (관리자 화이트리스트는 예외)
     if (!email || (!email.endsWith("@stu.jejunu.ac.kr") && !isAdminEmail(email))) {
-      return res.status(400).json({ error: "제주대학교 학생 이메일(@stu.jejunu.ac.kr)만 사용 가능합니다." });
+      return res.status(400).json({ message: "제주대학교 학생 이메일(@stu.jejunu.ac.kr)만 사용 가능합니다." });
+    }
+
+    // 이메일 단위 잠금 (최근 30분간 실패 시도 합계)
+    if (await isEmailLockedOut(email)) {
+      return res.status(429).json({
+        message: `시도 횟수가 너무 많습니다. ${LOCKOUT_WINDOW_MIN}분 후에 다시 시도해주세요.`,
+      });
     }
 
     // 1분 내 재발급 차단 (스팸 방지)
@@ -48,7 +70,7 @@ router.post("/send-code", async (req, res) => {
       [email]
     );
     if (recent.length > 0) {
-      return res.status(429).json({ error: "1분 후에 다시 시도해주세요." });
+      return res.status(429).json({ message: "1분 후에 다시 시도해주세요." });
     }
 
     // 6자리 코드 생성
@@ -74,7 +96,7 @@ router.post("/send-code", async (req, res) => {
     res.json({ message: "인증 코드가 발송되었습니다." });
   } catch (err) {
     console.error("send-code 오류:", err);
-    res.status(500).json({ error: "인증 코드 발송에 실패했습니다." });
+    res.status(500).json({ message: "인증 코드 발송에 실패했습니다." });
   }
 });
 
@@ -85,7 +107,14 @@ router.post("/verify-code", async (req, res) => {
     const { email, code } = req.body;
 
     if (!email || !code) {
-      return res.status(400).json({ error: "이메일과 인증 코드를 입력해주세요." });
+      return res.status(400).json({ message: "이메일과 인증 코드를 입력해주세요." });
+    }
+
+    // 이메일 단위 잠금 (최근 30분간 실패 시도 합계)
+    if (await isEmailLockedOut(email)) {
+      return res.status(429).json({
+        message: `시도 횟수가 너무 많습니다. ${LOCKOUT_WINDOW_MIN}분 후에 다시 시도해주세요.`,
+      });
     }
 
     // 해당 이메일의 가장 최근 미사용 코드 조회
@@ -99,19 +128,14 @@ router.post("/verify-code", async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(400).json({ error: "인증 코드를 먼저 발급받아주세요." });
+      return res.status(400).json({ message: "인증 코드를 먼저 발급받아주세요." });
     }
 
     const authCode = rows[0];
 
-    // 시도 횟수 초과 확인
-    if (authCode.attempts >= 5) {
-      return res.status(400).json({ error: "시도 횟수를 초과했습니다. 새 코드를 발급받아주세요." });
-    }
-
     // 만료 확인
     if (new Date() > new Date(authCode.expires_at)) {
-      return res.status(400).json({ error: "인증 코드가 만료되었습니다. 새 코드를 발급받아주세요." });
+      return res.status(400).json({ message: "인증 코드가 만료되었습니다. 새 코드를 발급받아주세요." });
     }
 
     // 코드 불일치
@@ -121,7 +145,7 @@ router.post("/verify-code", async (req, res) => {
         "UPDATE auth_codes SET attempts = attempts + 1 WHERE id = ?",
         [authCode.id]
       );
-      return res.status(400).json({ error: "인증 코드가 올바르지 않습니다." });
+      return res.status(400).json({ message: "인증 코드가 올바르지 않습니다." });
     }
 
     // 코드 일치 → 사용 처리
@@ -158,7 +182,7 @@ router.post("/verify-code", async (req, res) => {
     res.json({ message: "인증 성공", token, serverSecret, role });
   } catch (err) {
     console.error("verify-code 오류:", err);
-    res.status(500).json({ error: "인증 코드 검증에 실패했습니다." });
+    res.status(500).json({ message: "인증 코드 검증에 실패했습니다." });
   }
 });
 
