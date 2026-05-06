@@ -1,0 +1,3 @@
+const zkpDir = path.join(process.cwd(), "zkp");
+const buildDir = path.join(zkpDir, "build");
+const inputPath = path.join(buildDir, "input.json");
