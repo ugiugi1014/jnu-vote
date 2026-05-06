@@ -2,6 +2,7 @@ import express from "express";
 import db from "../db/index.js";
 import { getVotingContract } from "../blockchain/votingContract.js";
 import { decryptVote } from "../services/ecdhDecrypt.js";
+import { generateZkpInput, runCircomProof } from "../services/zkpService.js";
 
 const router = express.Router();
 
@@ -10,7 +11,6 @@ const router = express.Router();
  */
 router.post("/:id/tally", async (req, res) => {
   const electionId = req.params.id;
-
   const conn = await db.getConnection();
 
   try {
@@ -55,6 +55,8 @@ router.post("/:id/tally", async (req, res) => {
       return res.status(400).json({ message: "후보 없음" });
     }
 
+    const candidatesCount = candidateRows.length;
+
     // candidate_index -> candidate_id 매핑
     const candidateMap = {};
     for (const c of candidateRows) {
@@ -72,8 +74,7 @@ router.post("/:id/tally", async (req, res) => {
       return res.status(400).json({ message: "유권자 없음" });
     }
 
-    // voterPublicKey 배열 만들기
-    const voterPublicKeys = voterRows.map(v => v.voter_public_key);
+    const voterPublicKeys = voterRows.map((v) => v.voter_public_key);
 
     // 4) 블록체인에서 encryptedVotes 가져오기
     const contract = getVotingContract(election.contract_address);
@@ -84,7 +85,7 @@ router.post("/:id/tally", async (req, res) => {
       return res.status(400).json({ message: "투표 데이터 없음" });
     }
 
-    // 5) 집계 배열 초기화
+    // 5) 집계 초기화
     const tally = {};
     for (const c of candidateRows) {
       tally[c.candidate_index] = 0;
@@ -103,19 +104,32 @@ router.post("/:id/tally", async (req, res) => {
         voterPubKey
       );
 
-      // decryptedText 예시: {"candidateIndex":2}
       const voteObj = JSON.parse(decryptedText);
       const idx = voteObj.candidateIndex;
 
-      if (tally[idx] === undefined) {
-        console.warn("Invalid candidateIndex:", idx);
-        continue;
-      }
+      if (tally[idx] === undefined) continue;
 
       tally[idx] += 1;
     }
 
-    // 7) tally_results 저장 (기존 삭제 후 재삽입)
+    // ===============================
+    // 7) ZKP input 생성 + proof 생성
+    // ===============================
+    const zkpInput = generateZkpInput(tally, candidatesCount);
+
+    let proofResult = null;
+    try {
+      proofResult = runCircomProof(zkpInput);
+    } catch (err) {
+      console.error("ZKP proof 생성 실패:", err.message);
+      // proof 실패해도 개표는 가능하게 할지 정책 결정 필요
+      // 여기서는 실패하면 개표 중단
+      throw new Error("ZKP proof 생성 실패");
+    }
+
+    // ===============================
+    // 8) DB 저장
+    // ===============================
     await conn.query(`DELETE FROM tally_results WHERE election_id = ?`, [
       electionId,
     ]);
@@ -130,7 +144,7 @@ router.post("/:id/tally", async (req, res) => {
       );
     }
 
-    // 8) elections 상태 업데이트
+    // 9) elections 상태 업데이트
     await conn.query(
       `UPDATE elections SET status = 'tallied' WHERE id = ?`,
       [electionId]
@@ -139,9 +153,12 @@ router.post("/:id/tally", async (req, res) => {
     await conn.commit();
 
     return res.json({
-      message: "개표 완료",
+      message: "개표 완료 + ZKP proof 생성 완료",
       electionId,
       tally,
+      zkpInput,
+      proof: proofResult.proof,
+      publicSignals: proofResult.publicSignals,
     });
   } catch (err) {
     await conn.rollback();
