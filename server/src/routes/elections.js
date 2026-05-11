@@ -464,3 +464,90 @@ router.get("/:id/voters", auth, adminOnly, async (req, res) => {
     res.status(500).json({ message: "서버 오류" });
   }
 });
+
+/*
+=====================================================
+  (추가) 결과 조회 API
+  GET /elections/:id/result
+  - 개표 완료(tallied)된 선거 결과 조회
+  - 후보별 득표수 + 득표율 + 당선자 반환
+=====================================================
+*/
+router.get("/:id/result", async (req, res) => {
+  try {
+    const electionId = req.params.id;
+
+    // 1) 선거 상태 확인
+    const [electionRows] = await db.query(
+      `SELECT id, title, status FROM elections WHERE id=?`,
+      [electionId]
+    );
+
+    if (electionRows.length === 0) {
+      return res.status(404).json({ message: "선거 없음" });
+    }
+
+    const election = electionRows[0];
+
+    if (election.status !== ELECTION_STATUS.TALLIED) {
+      return res.status(400).json({
+        message: "개표 완료된 선거(tallied)만 결과 조회 가능",
+        status: election.status,
+      });
+    }
+
+    // 2) tally_results + candidates 조인해서 득표수 가져오기
+    const [rows] = await db.query(
+      `SELECT tr.candidate_id, tr.vote_count,
+              c.name AS candidate_name,
+              c.candidate_index
+       FROM tally_results tr
+       JOIN candidates c ON tr.candidate_id = c.id
+       WHERE tr.election_id=?
+       ORDER BY c.candidate_index ASC`,
+      [electionId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "개표 결과 없음" });
+    }
+
+    // 3) 총 투표수 계산
+    const totalVotes = rows.reduce((sum, r) => sum + r.vote_count, 0);
+
+    // 4) 득표율 계산
+    const results = rows.map((r) => {
+      const percentage =
+        totalVotes === 0 ? 0 : Number(((r.vote_count / totalVotes) * 100).toFixed(2));
+
+      return {
+        candidate_id: r.candidate_id,
+        candidate_index: r.candidate_index,
+        name: r.candidate_name,
+        vote_count: r.vote_count,
+        percentage,
+      };
+    });
+
+    // 5) 당선자 선정 (최다 득표)
+    let winner = results[0];
+    for (const r of results) {
+      if (r.vote_count > winner.vote_count) {
+        winner = r;
+      }
+    }
+
+    // 6) 응답
+    res.json({
+      electionId: election.id,
+      title: election.title,
+      status: election.status,
+      totalVotes,
+      winner,
+      results,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
+  }
+});
