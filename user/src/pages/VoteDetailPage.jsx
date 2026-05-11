@@ -1,17 +1,47 @@
 import { useState } from "react";
 import { Icon } from "../components/Icons";
+import { generateECDHKeyPair, deriveSharedKeyAndDispose, importCoordPublicKey, exportPublicKey, exportSharedKeyAsBigInt } from '../services/ecdhService';
+import { privateKeyToBigInt } from '../services/walletService';
+import { generateSecret, generateVoteProof } from '../services/zkpService';
+import { encryptCandidate } from '../services/poseidonService';
 import { CANDIDATES } from "../data/mockData";
 import "../styles/VoteDetailPage.css";
 
 const LOGO = "/src/jejun.png";
 
-export default function VoteDetailPage({ vote, onBack }) {
+export default function VoteDetailPage({ vote, onBack, wallet }) {
   const [selected, setSelected] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showDonePopup, setShowDonePopup] = useState(false);
   const selectedCandidate = CANDIDATES.find(c => c.id === selected);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    // const coordJWK = await fetch('/api/coordinator/publicKey').then(r => r.json()); // 백엔드 연결 시 주석 해제
+    const coordJWK = {"kty":"EC","x":"UyY8smusO47QR3tLqw8l1jvax1o3qtWkPIrC-MsYNq4","y":"aFHrGgBitQDva9i_UWEgEcn3cM5T2JlY4GunXMQvQ18","crv":"P-256"}; // mock
+
+    //키쌍 생성
+    const keyPair = await generateECDHKeyPair();
+    //관리자 공개키 가져오기
+    const coordPublicKey = await importCoordPublicKey(coordJWK);
+    //투표자 공개키 가져오기
+    const voterPublicKey = await exportPublicKey(keyPair.publicKey);
+    //공유키 생성
+    const sharedKey = await deriveSharedKeyAndDispose(keyPair, coordPublicKey);
+    //공유키 타입변환
+    const sharedKeyBigInt = await exportSharedKeyAsBigInt(sharedKey);
+    //지갑 키 가져오기
+    const walletPrivateKeyBigInt = privateKeyToBigInt(wallet.privateKey);
+    //지갑 생성 및 지갑을 scret으로 사용
+    const secret = await generateSecret(walletPrivateKeyBigInt, vote.id);
+    //투표 유효성 검사
+    // TODO: 3을 maxCandidate(from vote 객체)로 변경
+    const { proof, nullifier } = await generateVoteProof(secret, selected, 3);
+    // TODO: castVote(connectedWallet, contractAddress, abi, nullifier, proof, ciphertext) 연결
+    const { ciphertext, nonce } = await encryptCandidate(selected, sharedKeyBigInt);
+
+    console.log("공유키:", sharedKey);
+    console.log("투표자 공개키:", voterPublicKey);
+    // 다음: Poseidon 암호화 → snarkjs proof → 체인 제출
     setShowModal(false);
     setShowDonePopup(true);
   };

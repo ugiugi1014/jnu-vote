@@ -11,12 +11,14 @@ export default function App() {
   const [page, setPage] = useState("login");
   const [studentId, setStudentId] = useState("");
   const [currentVote, setCurrentVote] = useState(null);
+  const [wallet, setWallet] = useState(null);
 
   // none: 미신청 | pending: 검토중 | approved: 승인완료
   const [userStatus, setUserStatus] = useState("none");
 
-  const handleLogin = (id) => {
+  const handleLogin = (id, wallet) => {
     setStudentId(id);
+    setWallet(wallet);
     if (id === "admin") { setPage("admin"); return; }
     if (id === "user") {setUserStatus("approved");}
     setPage("list");
@@ -70,7 +72,7 @@ export default function App() {
           onGoUpload={handleGoUpload}
         />
       )}
-      {page === "detail" && <VoteDetailPage vote={currentVote} onBack={handleBack} />}
+      {page === "detail" && <VoteDetailPage vote={currentVote} wallet={wallet} onBack={handleBack} />}
       {page === "result" && <VoteResultPage vote={currentVote} onBack={handleBack} />}
     </>
   );
