@@ -17,6 +17,7 @@ CREATE TABLE elections (
   coord_public_key  TEXT,                  -- ECDH 코디네이터 공개키 (유권자에게 공개)
   coord_private_key TEXT,                  -- ECDH 코디네이터 개인키 (개표 시 복호화용)
   contract_address  VARCHAR(42),           -- 배포된 VotingSystem 컨트랙트 주소
+  token_contract_address VARCHAR(42),       -- 배포된 VotingToken 컨트랙트 주소
   total_voters      INT           DEFAULT 0,
   voted_count       INT           DEFAULT 0,
   created_at        DATETIME      DEFAULT CURRENT_TIMESTAMP
@@ -28,7 +29,7 @@ CREATE TABLE candidates (
   election_id      INT          NOT NULL,
   name             VARCHAR(100) NOT NULL,
   description      TEXT,
-  candidate_index  INT          NOT NULL,  -- 컨트랙트에서 사용하는 인덱스 (1, 2, 3...)
+  candidate_index  INT          NOT NULL,  -- circuits/컨트랙트에서 사용하는 0-based 인덱스 (0, 1, 2...)
   created_at       DATETIME     DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
   UNIQUE KEY uq_candidate (election_id, candidate_index)
@@ -39,12 +40,30 @@ CREATE TABLE voters (
   id               INT PRIMARY KEY AUTO_INCREMENT,
   election_id      INT          NOT NULL,
   email            VARCHAR(100) NOT NULL,  -- @stu.jejunu.ac.kr
+  student_id       VARCHAR(20),             -- 학생증 인증용 학번
   wallet_address   VARCHAR(42),            -- 인앱 지갑 주소 (인증 완료 후 저장)
   voter_public_key TEXT,                   -- ECDH 공개키 (투표 제출 시 저장, 개표에 사용)
+  verification_status ENUM('none', 'pending', 'approved', 'rejected') DEFAULT 'none',
+  verification_note TEXT,
+  verified_at      DATETIME,
+  token_issued_at  DATETIME,
   has_voted        BOOLEAN      DEFAULT FALSE,
   created_at       DATETIME     DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
   UNIQUE KEY uq_voter (election_id, email)
+);
+
+-- 계정 단위 학생증/재학증명서 인증
+-- 한 번 approved 되면 모든 선거에서 인증된 사용자로 취급
+CREATE TABLE user_verifications (
+  id          INT PRIMARY KEY AUTO_INCREMENT,
+  email       VARCHAR(100) UNIQUE NOT NULL,
+  student_id  VARCHAR(20)  NOT NULL,
+  file_path   VARCHAR(255),
+  status      ENUM('none', 'pending', 'approved', 'rejected') DEFAULT 'pending',
+  note        TEXT,
+  created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at DATETIME
 );
 
 -- 이메일 인증 코드
@@ -64,6 +83,8 @@ CREATE TABLE user_secrets (
   id          INT PRIMARY KEY AUTO_INCREMENT,
   email       VARCHAR(100) UNIQUE NOT NULL,
   secret      VARCHAR(64)  NOT NULL,
+  wallet_address VARCHAR(42),
+  wallet_registered_at DATETIME,
   created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP
 );
 

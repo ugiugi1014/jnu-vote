@@ -22,6 +22,10 @@ if (missingEnv.length > 0) {
 const pool = require("./db");
 const authRoutes = require("./routes/auth");
 const electionsRoutes = require("./routes/elections");
+const voterRoutes = require("./routes/voter");
+const voteRoutes = require("./routes/vote");
+const verificationRoutes = require("./routes/verification");
+const { restoreElectionSchedules } = require("./services/electionScheduler");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -53,7 +57,20 @@ app.get("/health", async (req, res) => {
 // 라우터 연결
 app.use("/auth", authRoutes);
 app.use("/elections", electionsRoutes);
+app.use("/elections", voterRoutes);
+app.use("/vote", voteRoutes);
+app.use("/verification", verificationRoutes);
+
+// 프론트 통합용 /api prefix 호환
+app.use("/api/auth", authRoutes);
+app.use("/api/elections", electionsRoutes);
+app.use("/api/elections", voterRoutes);
+app.use("/api/vote", voteRoutes);
+app.use("/api/verification", verificationRoutes);
 
 app.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
+  restoreElectionSchedules().catch((err) => {
+    console.error("선거 예약 복구 실패:", err);
+  });
 });

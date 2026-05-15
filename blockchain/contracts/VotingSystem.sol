@@ -172,6 +172,11 @@ contract VotingSystem is Ownable {
         return votes.length;
     }
 
+    // 암호화된 전체 투표 데이터 조회 (백엔드 개표용)
+    function getAllVotes() external view returns (EncryptedVote[] memory) {
+        return votes;
+    }
+
     // 특정 후보 득표수 조회
     function getVoteCount(uint256 candidateId) external view returns (uint256) {
         return tallyResult[candidateId];

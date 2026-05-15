@@ -1,9 +1,6 @@
 node_modules
 .env
 
-# HTML 문서
-*.html
-
 # Hardhat files
 /cache
 /artifacts
@@ -19,25 +16,23 @@ node_modules
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments/chain-31337
 
-# Docs & media
-*.md
-*.png
-*.jpg
-*.jpeg
+# Local docs exported from diagrams/tools
+*.html
 *.xml
-*.svg
-diagrams/
-build/
-circuits/
-circom/
-scripts/
-zkp-vote/
+*.drawio
+*.docx
+*.pdf
+*.pptx
+*.xlsx
 
-# ZKP 관련 바이너리/빌드 파일
+# Build outputs
+build/
+dist/
+
+# ZKP local build artifacts
+zkp/build/
 *.ptau
-*.zkey
 *.sym
-*.json
 
 # VSCode Hardhat auto-generated
 .vscode_hardhat_config_*.ts
@@ -49,3 +44,4 @@ Thumbs.db
 # Server
 server/node_modules
 server/.env
+server/uploads/

@@ -4,8 +4,12 @@ const db = require("../db");
 const auth = require("../middleware/auth");
 const { ethers } = require("ethers");
 
-// RPC Provider (Infura/Alchemy/Local node)
-const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+function getProvider() {
+  if (!process.env.RPC_URL) {
+    throw new Error("RPC_URL 환경변수가 필요합니다.");
+  }
+  return new ethers.JsonRpcProvider(process.env.RPC_URL);
+}
 
 /*
 =====================================================
@@ -24,6 +28,7 @@ router.post("/confirm", auth, async (req, res) => {
   const conn = await db.getConnection();
 
   try {
+    const provider = getProvider();
     await conn.beginTransaction();
 
     const { election_id, txHash, voter_public_key } = req.body;
@@ -68,9 +73,12 @@ router.post("/confirm", auth, async (req, res) => {
 
     // 2) voter 조회
     const [voterRows] = await conn.query(
-      `SELECT id, wallet_address, has_voted 
-       FROM voters 
-       WHERE election_id=? AND email=?`,
+      `SELECT v.id, us.wallet_address, COALESCE(uv.status, 'none') AS verification_status,
+              v.token_issued_at, v.has_voted
+       FROM voters v
+       LEFT JOIN user_secrets us ON us.email = v.email
+       LEFT JOIN user_verifications uv ON uv.email = v.email
+       WHERE v.election_id=? AND v.email=?`,
       [election_id, email]
     );
 
@@ -84,6 +92,16 @@ router.post("/confirm", auth, async (req, res) => {
     if (!voter.wallet_address) {
       await conn.rollback();
       return res.status(400).json({ message: "지갑 주소가 등록되지 않음" });
+    }
+
+    if (voter.verification_status !== "approved") {
+      await conn.rollback();
+      return res.status(400).json({ message: "학생증 인증 승인 후 투표할 수 있습니다." });
+    }
+
+    if (!voter.token_issued_at) {
+      await conn.rollback();
+      return res.status(400).json({ message: "투표 토큰이 발급되지 않았습니다." });
     }
 
     if (voter.has_voted) {

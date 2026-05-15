@@ -1,8 +1,8 @@
-import express from "express";
-import db from "../db/index.js";
-import { getVotingContract } from "../blockchain/votingContract.js";
-import { decryptVote } from "../services/ecdhDecrypt.js";
-import { generateZkpInput, runCircomProof } from "../services/zkpService.js";
+const express = require("express");
+const db = require("../db");
+const { getVotingContract } = require("../blockchain/votingContract");
+const { decryptVote } = require("../services/ecdhDecrypt");
+const { generateTallyZkpInput, runCircomProof } = require("../services/zkpServices");
 
 const router = express.Router();
 
@@ -92,30 +92,43 @@ router.post("/:id/tally", async (req, res) => {
     }
 
     // 6) 복호화 및 집계
+    const zkpVotes = [];
     for (let i = 0; i < encryptedVotes.length; i++) {
-      const encryptedHex = encryptedVotes[i];
-      const voterPubKey = voterPublicKeys[i];
+      const encryptedVote = encryptedVotes[i];
+      const encryptedData = encryptedVote.encryptedData || encryptedVote[0] || encryptedVote;
+      const voterPubKey = encryptedVote.voterPublicKey || encryptedVote[1] || voterPublicKeys[i];
 
       if (!voterPubKey) continue;
 
       const decryptedText = decryptVote(
-        encryptedHex,
+        encryptedData,
         election.coord_private_key,
         voterPubKey
       );
 
       const voteObj = JSON.parse(decryptedText);
-      const idx = voteObj.candidateIndex;
+      const idx = Number(
+        voteObj.candidateId !== undefined ? voteObj.candidateId : voteObj.candidateIndex
+      );
 
       if (tally[idx] === undefined) continue;
 
       tally[idx] += 1;
+      zkpVotes.push({
+        sharedKey: voteObj.sharedKey,
+        nonce: voteObj.nonce,
+        ciphertext: voteObj.ciphertext,
+      });
     }
 
     // ===============================
     // 7) ZKP input 생성 + proof 생성
     // ===============================
-    const zkpInput = generateZkpInput(tally, candidatesCount);
+    const zkpInput = generateTallyZkpInput({
+      zkpVotes,
+      tally,
+      candidatesCount,
+    });
 
     let proofResult = null;
     try {
@@ -173,4 +186,4 @@ router.post("/:id/tally", async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;

@@ -1,53 +1,110 @@
-import fs from "fs";
-import path from "path";
-import { execSync } from "child_process";
+const fs = require("fs");
+const path = require("path");
+const { execFileSync } = require("child_process");
+
+function toCircuitValue(value, fieldName) {
+  if (value === undefined || value === null || value === "") {
+    throw new Error(`${fieldName} 값이 없습니다.`);
+  }
+  return BigInt(value).toString();
+}
 
 /**
- * tallyObj 예: { "1": 10, "2": 5, "3": 2 }
- * candidatesCount 예: 3
+ * circuits/tally.circom 입력 형식 생성
+ * {
+ *   sharedKeys: [],
+ *   nonces: [],
+ *   ciphertexts: [],
+ *   adminResult: []
+ * }
  */
-export function generateZkpInput(tallyObj, candidatesCount) {
-  const tallyArray = [];
+function generateTallyZkpInput({ zkpVotes, tally, candidatesCount }) {
+  if (!Array.isArray(zkpVotes)) {
+    throw new Error("zkpVotes 배열이 필요합니다.");
+  }
 
-  for (let i = 1; i <= candidatesCount; i++) {
-    tallyArray.push(tallyObj[i] || 0);
+  const circuitVotes = Number(process.env.TALLY_CIRCUIT_VOTES || 10);
+  const circuitCandidates = Number(process.env.TALLY_CIRCUIT_CANDIDATES || 3);
+
+  if (zkpVotes.length !== circuitVotes) {
+    throw new Error(
+      `tally 회로 투표 수 불일치: circuit=${circuitVotes}, actual=${zkpVotes.length}`
+    );
+  }
+
+  if (candidatesCount !== circuitCandidates) {
+    throw new Error(
+      `tally 회로 후보 수 불일치: circuit=${circuitCandidates}, actual=${candidatesCount}`
+    );
+  }
+
+  const sharedKeys = zkpVotes.map((v, i) => toCircuitValue(v.sharedKey, `sharedKeys[${i}]`));
+  const nonces = zkpVotes.map((v, i) => toCircuitValue(v.nonce, `nonces[${i}]`));
+  const ciphertexts = zkpVotes.map((v, i) => toCircuitValue(v.ciphertext, `ciphertexts[${i}]`));
+
+  const adminResult = [];
+  for (let candidateIndex = 0; candidateIndex < candidatesCount; candidateIndex++) {
+    adminResult.push(toCircuitValue(tally[candidateIndex] || 0, `adminResult[${candidateIndex}]`));
   }
 
   return {
-    tally: tallyArray,
+    sharedKeys,
+    nonces,
+    ciphertexts,
+    adminResult,
   };
+}
+
+// 기존 호출부 호환용 이름
+const generateZkpInput = generateTallyZkpInput;
+
+function assertFileExists(filePath, label) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`${label} 파일 없음: ${filePath}`);
+  }
 }
 
 /**
  * circom/snarkjs proof 생성 (명령어 실행 방식)
- * - circom 팀이 이 부분을 구현/관리하면 됨
+ * 기본 경로: server/zkp/build
+ * 환경변수로 경로 조정 가능:
+ * - ZKP_BUILD_DIR
+ * - TALLY_WASM_PATH
+ * - TALLY_WITNESS_GEN_PATH
+ * - TALLY_ZKEY_PATH
+ * - SNARKJS_BIN
  */
-export function runCircomProof(inputJson) {
-  const zkpDir = path.join(process.cwd(), "zkp");
-  const buildDir = path.join(zkpDir, "build");
+function runCircomProof(inputJson) {
+  const buildDir = process.env.ZKP_BUILD_DIR || path.join(process.cwd(), "zkp", "build");
 
   const inputPath = path.join(buildDir, "input.json");
   const witnessPath = path.join(buildDir, "witness.wtns");
   const proofPath = path.join(buildDir, "proof.json");
   const publicPath = path.join(buildDir, "public.json");
 
-  const wasmPath = path.join(buildDir, "tally_js", "tally.wasm");
-  const witnessGenPath = path.join(buildDir, "tally_js", "generate_witness.js");
-  const zkeyPath = path.join(buildDir, "tally.zkey");
+  const wasmPath = process.env.TALLY_WASM_PATH || path.join(buildDir, "tally_js", "tally.wasm");
+  const witnessGenPath =
+    process.env.TALLY_WITNESS_GEN_PATH || path.join(buildDir, "tally_js", "generate_witness.js");
+  const zkeyPath = process.env.TALLY_ZKEY_PATH || path.join(buildDir, "tally.zkey");
+  const snarkjsBin = process.env.SNARKJS_BIN || "snarkjs";
+
+  fs.mkdirSync(buildDir, { recursive: true });
+  assertFileExists(wasmPath, "tally.wasm");
+  assertFileExists(witnessGenPath, "generate_witness.js");
+  assertFileExists(zkeyPath, "tally.zkey");
 
   // 1) input.json 저장
   fs.writeFileSync(inputPath, JSON.stringify(inputJson, null, 2));
 
   // 2) witness 생성
-  execSync(`node ${witnessGenPath} ${wasmPath} ${inputPath} ${witnessPath}`, {
+  execFileSync("node", [witnessGenPath, wasmPath, inputPath, witnessPath], {
     stdio: "inherit",
   });
 
   // 3) proof 생성
-  execSync(
-    `snarkjs groth16 prove ${zkeyPath} ${witnessPath} ${proofPath} ${publicPath}`,
-    { stdio: "inherit" }
-  );
+  execFileSync(snarkjsBin, ["groth16", "prove", zkeyPath, witnessPath, proofPath, publicPath], {
+    stdio: "inherit",
+  });
 
   // 4) 결과 파일 읽기
   const proof = JSON.parse(fs.readFileSync(proofPath, "utf-8"));
@@ -55,3 +112,5 @@ export function runCircomProof(inputJson) {
 
   return { proof, publicSignals };
 }
+
+module.exports = { generateZkpInput, generateTallyZkpInput, runCircomProof };

@@ -156,13 +156,15 @@ router.post("/verify-code", async (req, res) => {
 
     // 서버 시크릿 조회 또는 생성 (인앱 지갑 재생성용)
     const [secrets] = await pool.query(
-      "SELECT secret FROM user_secrets WHERE email = ?",
+      "SELECT secret, wallet_address FROM user_secrets WHERE email = ?",
       [email]
     );
 
     let serverSecret;
+    let walletAddress = null;
     if (secrets.length > 0) {
       serverSecret = secrets[0].secret;
+      walletAddress = secrets[0].wallet_address;
     } else {
       serverSecret = crypto.randomBytes(32).toString("hex");
       await pool.query(
@@ -170,6 +172,17 @@ router.post("/verify-code", async (req, res) => {
         [email, serverSecret]
       );
     }
+
+    const [verificationRows] = await pool.query(
+      "SELECT status, student_id, note, reviewed_at FROM user_verifications WHERE email = ?",
+      [email]
+    );
+    const verification = verificationRows[0] || {
+      status: "none",
+      student_id: null,
+      note: null,
+      reviewed_at: null,
+    };
 
     // JWT 발급 (24시간 유효) — 관리자 화이트리스트면 role=admin
     const role = isAdminEmail(email) ? "admin" : "user";
@@ -179,7 +192,14 @@ router.post("/verify-code", async (req, res) => {
       { expiresIn: "24h" }
     );
 
-    res.json({ message: "인증 성공", token, serverSecret, role });
+    res.json({
+      message: "인증 성공",
+      token,
+      serverSecret,
+      role,
+      walletAddress,
+      verification,
+    });
   } catch (err) {
     console.error("verify-code 오류:", err);
     res.status(500).json({ message: "인증 코드 검증에 실패했습니다." });
