@@ -15,6 +15,8 @@ export default function LoginPage({ onLogin }) {
   const handleSendCode = async () => {
     if (!isEmailValid) return;
     if (email === "admin") { onLogin("admin", null); return; } // admin mock
+    if (email === "user") { onLogin("user", null); return; }
+    if (email === "user1") { onLogin("user1", null); return; }
     // TODO: 백엔드 API 엔드포인트 확인 후 변경
     await fetch('/api/auth/send-code', {
      method: 'POST',

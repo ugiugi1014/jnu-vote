@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "../styles/AdminPage.css";
 
 const LOGO = "/src/jejun.png";
@@ -72,6 +72,19 @@ function LockIcon() {
 ════════════════════════════════════════ */
 function InfoModal({ agenda, onClose }) {
   if (!agenda) return null;
+
+  // mock 득표수 데이터
+  // TODO: 백엔드 연동 시 아래 useEffect로 교체
+  // const [results, setResults] = useState({});
+  // useEffect(() => {
+  //   if (agenda.status !== "ended") return;
+  //   fetch(`/api/elections/${agenda.id}/results`)
+  //     .then(r => r.json())
+  //     .then(data => setResults(data.votes)); // { candidateId: count }
+  // }, [agenda.id]);
+  const mockResults = { 1: 42, 2: 31, 3: 18 };
+  const totalVotes = Object.values(mockResults).reduce((a, b) => a + b, 0);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide" onClick={e => e.stopPropagation()}>
@@ -94,10 +107,26 @@ function InfoModal({ agenda, onClose }) {
         {agenda.candidates.map(c => (
           <div className="cand-card" key={c.id}>
             <div className="cand-num">{c.id}</div>
-            <div>
+            <div style={{ flex: 1 }}>
               <div className="cand-name">{c.name}</div>
               <div className="cand-dept">{c.dept}</div>
               <div className="cand-slogan">{c.slogan}</div>
+              {agenda.status === "ended" && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 12, color: "#888", marginBottom: 3 }}>
+                    {mockResults[c.id] ?? 0}표 ({totalVotes > 0 ? Math.round((mockResults[c.id] ?? 0) / totalVotes * 100) : 0}%)
+                  </div>
+                  <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%",
+                      width: `${totalVotes > 0 ? (mockResults[c.id] ?? 0) / totalVotes * 100 : 0}%`,
+                      background: "#3B6D11",
+                      borderRadius: 3,
+                      transition: "width 0.4s"
+                    }} />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -367,12 +396,27 @@ function AgendaSection() {
 
   const filtered = agendas.filter(a => a.title.includes(search) || a.category.includes(search));
 
-  const handleSave = (form) => {
+  const handleSave = async (form) => {
+    // TODO: 백엔드 연동 시 주석 해제
+    // await fetch(`/api/elections/${editTarget.id}`, {
+    //   method: 'PUT',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(form),
+    // });
     setAgendas(prev => prev.map(a => a.id === editTarget.id ? { ...a, ...form } : a));
     setEditTarget(null);
   };
 
-  const handleCreate = (form) => {
+  const handleCreate = async (form) => {
+    // TODO: 백엔드 연동 시 주석 해제
+    // ElectionFactory 컨트랙트 호출로 교체 예정
+    // const res = await fetch('/api/elections', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(form),
+    // });
+    // const { id } = await res.json();
+    // setAgendas(prev => [...prev, { ...form, id }]);
     const newId = Math.max(...agendas.map(a => a.id)) + 1;
     setAgendas(prev => [...prev, { ...form, id: newId }]);
     setShowCreate(false);
@@ -435,15 +479,25 @@ function VoterSection() {
   const [photoTarget, setPhotoTarget] = useState(null);
   const [search, setSearch] = useState("");
 
-  const handleApprove = (id) => {
+  const handleApprove = async (id) => {
     const voter = pending.find(v => v.id === id);
     if (!voter) return;
+
+    // TODO: 백엔드 연동 시 주석 해제
+    // await fetch(`/api/voters/${id}/approve`, { method: 'POST' });
+    // 승인 후 백엔드가 해당 지갑 주소에 토큰 발행
+    // await fetch(`/api/voters/${id}/mint-token`, { method: 'POST' });
+
     setPending(prev => prev.filter(v => v.id !== id));
     setApproved(prev => [...prev, { ...voter, approvedDate: new Date().toISOString().slice(0, 10) }]);
     setPhotoTarget(null);
   };
 
-  const handleRevoke = (id) => setApproved(prev => prev.filter(v => v.id !== id));
+  const handleRevoke = async (id) => {
+    // TODO: 백엔드 연동 시 주석 해제
+    // await fetch(`/api/voters/${id}/revoke`, { method: 'POST' });
+    setApproved(prev => prev.filter(v => v.id !== id));
+  };
 
   const filteredPending = pending.filter(v => v.name.includes(search) || v.studentId.includes(search));
   const filteredApproved = approved.filter(v => v.name.includes(search) || v.studentId.includes(search));

@@ -21,6 +21,7 @@ export default function App() {
     setWallet(wallet);
     if (id === "admin") { setPage("admin"); return; }
     if (id === "user") {setUserStatus("approved");}
+    if (id === "user1") {}
     setPage("list");
   };
 
