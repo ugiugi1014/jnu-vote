@@ -137,3 +137,38 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# ─── 프로젝트 추가분 ───
+
+# Hardhat
+/cache
+/artifacts
+/typechain
+/typechain-types
+/coverage
+/coverage.json
+ignition/deployments/chain-31337
+.vscode_hardhat_config_*.ts
+
+# 로컬 문서/다이어그램 (발표자료, drawio, docx 등)
+*.html
+*.xml
+*.drawio
+*.docx
+*.pdf
+*.pptx
+*.xlsx
+
+# ZKP 로컬 빌드 산출물
+zkp/build/
+*.ptau
+*.sym
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Server
+server/node_modules
+server/.env
+server/uploads/
