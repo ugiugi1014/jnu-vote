@@ -85,15 +85,23 @@ router.post("/", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: "종료 시간은 시작 시간보다 늦어야 합니다." });
     }
 
+    // 코디네이터 ECDH 키쌍 자동 생성 (개표 시 복호화용)
+    const { generateCoordKeyPair } = require("../services/ecdhDecrypt");
+    const { publicKeyJWK, privateKeyJWK } = await generateCoordKeyPair();
+
     const [result] = await db.query(
-      `INSERT INTO elections (title, description, start_time, end_time)
-       VALUES (?, ?, ?, ?)`,
-      [title, description || null, start_time, end_time]
+      `INSERT INTO elections (title, description, start_time, end_time, coord_public_key, coord_private_key)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [title, description || null, start_time, end_time, publicKeyJWK, privateKeyJWK]
     );
 
     scheduleElectionClose({ id: result.insertId, end_time });
 
-    res.json({ message: "선거 생성 완료", election_id: result.insertId });
+    res.json({
+      message: "선거 생성 완료",
+      election_id: result.insertId,
+      coord_public_key: publicKeyJWK,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "서버 오류" });

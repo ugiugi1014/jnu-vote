@@ -25,6 +25,7 @@ const electionsRoutes = require("./routes/elections");
 const voterRoutes = require("./routes/voter");
 const voteRoutes = require("./routes/vote");
 const verificationRoutes = require("./routes/verification");
+const tallyRoutes = require("./routes/tally");
 const { restoreElectionSchedules } = require("./services/electionScheduler");
 
 const app = express();
@@ -58,6 +59,7 @@ app.get("/health", async (req, res) => {
 app.use("/auth", authRoutes);
 app.use("/elections", electionsRoutes);
 app.use("/elections", voterRoutes);
+app.use("/elections", tallyRoutes);
 app.use("/vote", voteRoutes);
 app.use("/verification", verificationRoutes);
 
@@ -65,6 +67,7 @@ app.use("/verification", verificationRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/elections", electionsRoutes);
 app.use("/api/elections", voterRoutes);
+app.use("/api/elections", tallyRoutes);
 app.use("/api/vote", voteRoutes);
 app.use("/api/verification", verificationRoutes);
 

@@ -26,9 +26,9 @@ function generateTallyZkpInput({ zkpVotes, tally, candidatesCount }) {
   const circuitVotes = Number(process.env.TALLY_CIRCUIT_VOTES || 10);
   const circuitCandidates = Number(process.env.TALLY_CIRCUIT_CANDIDATES || 3);
 
-  if (zkpVotes.length !== circuitVotes) {
+  if (zkpVotes.length > circuitVotes) {
     throw new Error(
-      `tally 회로 투표 수 불일치: circuit=${circuitVotes}, actual=${zkpVotes.length}`
+      `투표 수 초과: circuit=${circuitVotes}, actual=${zkpVotes.length}. 회로 사이즈를 늘려야 합니다.`
     );
   }
 
@@ -38,9 +38,25 @@ function generateTallyZkpInput({ zkpVotes, tally, candidatesCount }) {
     );
   }
 
-  const sharedKeys = zkpVotes.map((v, i) => toCircuitValue(v.sharedKey, `sharedKeys[${i}]`));
-  const nonces = zkpVotes.map((v, i) => toCircuitValue(v.nonce, `nonces[${i}]`));
-  const ciphertexts = zkpVotes.map((v, i) => toCircuitValue(v.ciphertext, `ciphertexts[${i}]`));
+  // 회로는 고정 사이즈 입력이 필요 — 부족하면 dummy 로 패딩
+  // dummy 형식은 회로 spec 에 맞춰야 함. 기본값(0,0,0)이 의도된 동작이 아니라면
+  // 환경변수 TALLY_PAD_SHAREDKEY / TALLY_PAD_NONCE / TALLY_PAD_CIPHERTEXT 로 재정의 가능.
+  const padShared = process.env.TALLY_PAD_SHAREDKEY || "0";
+  const padNonce = process.env.TALLY_PAD_NONCE || "0";
+  const padCiphertext = process.env.TALLY_PAD_CIPHERTEXT || "0";
+
+  const padded = [...zkpVotes];
+  while (padded.length < circuitVotes) {
+    padded.push({
+      sharedKey: padShared,
+      nonce: padNonce,
+      ciphertext: padCiphertext,
+    });
+  }
+
+  const sharedKeys = padded.map((v, i) => toCircuitValue(v.sharedKey, `sharedKeys[${i}]`));
+  const nonces = padded.map((v, i) => toCircuitValue(v.nonce, `nonces[${i}]`));
+  const ciphertexts = padded.map((v, i) => toCircuitValue(v.ciphertext, `ciphertexts[${i}]`));
 
   const adminResult = [];
   for (let candidateIndex = 0; candidateIndex < candidatesCount; candidateIndex++) {
