@@ -161,6 +161,43 @@ router.get("/:id", async (req, res) => {
 
 /*
 =====================================================
+  3-1) 코디네이터 공개키 조회 (투표 시 ECDH용)
+  GET /elections/:id/coordinator/public-key
+  응답: JWK 객체 (kty, crv, x, y)
+=====================================================
+*/
+router.get("/:id/coordinator/public-key", async (req, res) => {
+  try {
+    const electionId = req.params.id;
+
+    const [rows] = await db.query(
+      "SELECT coord_public_key FROM elections WHERE id=?",
+      [electionId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "선거 없음" });
+    }
+
+    if (!rows[0].coord_public_key) {
+      return res.status(404).json({ message: "코디네이터 공개키 미생성" });
+    }
+
+    // DB 에는 JSON 문자열로 저장됨 — JWK 객체로 파싱해서 반환
+    try {
+      const jwk = JSON.parse(rows[0].coord_public_key);
+      return res.json(jwk);
+    } catch (parseErr) {
+      return res.status(500).json({ message: "공개키 파싱 실패", error: parseErr.message });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "서버 오류" });
+  }
+});
+
+/*
+=====================================================
   4) 선거 수정 (관리자)
   PUT /elections/:id
 =====================================================

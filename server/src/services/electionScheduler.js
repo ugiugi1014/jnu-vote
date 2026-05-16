@@ -12,8 +12,36 @@ function clearElectionSchedule(electionId) {
 }
 
 async function runAutoTally(electionId) {
-  // TODO: ECDH 복호화 + tally.circom 검증 연결 후 실제 개표 로직으로 교체
-  console.log(`[scheduler] election ${electionId} auto tally placeholder`);
+  // 순환 require 방지를 위해 함수 안에서 import
+  const { performTally } = require("./tallyService");
+
+  console.log(`[scheduler] election ${electionId} auto tally 시작`);
+
+  try {
+    const result = await performTally(electionId);
+
+    if (result.recordTallyError) {
+      console.warn(
+        `[scheduler] election ${electionId} 자동 개표: DB는 tallied 됐으나 체인 기록 실패 — 관리자 수동 재시도 필요. (${result.recordTallyError})`
+      );
+    } else {
+      console.log(
+        `[scheduler] election ${electionId} 자동 개표 완료 (tx=${result.tallyTxHash})`
+      );
+    }
+  } catch (err) {
+    // 사전 조건 미달 (contract_address 없음, 투표 데이터 없음 등) 은 정상 케이스로 간주
+    if (err.statusCode === 400 || err.statusCode === 404) {
+      console.log(
+        `[scheduler] election ${electionId} 자동 개표 스킵: ${err.message}`
+      );
+    } else {
+      console.error(
+        `[scheduler] election ${electionId} 자동 개표 실패:`,
+        err.message
+      );
+    }
+  }
 }
 
 async function closeAndTallyElection(electionId) {
