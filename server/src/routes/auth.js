@@ -4,6 +4,10 @@ const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
+const auth = require("../middleware/auth");
+
+// 0x + 40 hex 형식 검증
+const WALLET_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 // Gmail SMTP 설정 (TLS 검증 우회는 운영환경에서는 비활성화)
 const transporter = nodemailer.createTransport({
@@ -203,6 +207,103 @@ router.post("/verify-code", async (req, res) => {
   } catch (err) {
     console.error("verify-code 오류:", err);
     res.status(500).json({ message: "인증 코드 검증에 실패했습니다." });
+  }
+});
+
+// POST /auth/wallet
+// 사용자 단위 지갑주소 등록 (최초 1회만 허용, 등록 후 변경 불가)
+router.post("/wallet", auth, async (req, res) => {
+  try {
+    const { wallet_address } = req.body;
+
+    if (!wallet_address || !WALLET_ADDRESS_REGEX.test(wallet_address)) {
+      return res.status(400).json({ message: "잘못된 지갑 주소 형식입니다." });
+    }
+
+    const email = req.user.email;
+    const normalized = wallet_address.toLowerCase();
+
+    // 사용자 시크릿 존재 여부 확인 (verify-code 통과해야 행이 있음)
+    const [rows] = await pool.query(
+      "SELECT wallet_address FROM user_secrets WHERE email = ?",
+      [email]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "사용자를 찾을 수 없습니다. 다시 로그인해주세요." });
+    }
+
+    const existing = rows[0].wallet_address;
+
+    // 이미 등록된 경우 — 같은 주소면 OK, 다르면 409
+    if (existing) {
+      if (existing.toLowerCase() === normalized) {
+        return res.json({
+          message: "이미 등록된 지갑입니다.",
+          wallet_address: existing,
+          already_registered: true,
+        });
+      }
+      return res.status(409).json({
+        message: "이미 다른 지갑 주소가 등록되어 있습니다.",
+        wallet_address: existing,
+      });
+    }
+
+    // 최초 등록
+    await pool.query(
+      "UPDATE user_secrets SET wallet_address = ?, wallet_registered_at = NOW() WHERE email = ?",
+      [normalized, email]
+    );
+
+    res.json({
+      message: "지갑 주소 등록 완료",
+      wallet_address: normalized,
+      already_registered: false,
+    });
+  } catch (err) {
+    console.error("/auth/wallet 오류:", err);
+    res.status(500).json({ message: "지갑 등록에 실패했습니다." });
+  }
+});
+
+// GET /auth/me
+// 토큰 기반 사용자 정보 조회 (새로고침 시 자동 로그인용)
+router.get("/me", auth, async (req, res) => {
+  try {
+    const email = req.user.email;
+    const role = req.user.role;
+
+    const [secretRows] = await pool.query(
+      "SELECT wallet_address FROM user_secrets WHERE email = ?",
+      [email]
+    );
+
+    if (secretRows.length === 0) {
+      return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+    }
+
+    const [verificationRows] = await pool.query(
+      "SELECT status, student_id, note, reviewed_at FROM user_verifications WHERE email = ?",
+      [email]
+    );
+
+    const verification = verificationRows[0] || {
+      status: "none",
+      student_id: null,
+      note: null,
+      reviewed_at: null,
+    };
+
+    res.json({
+      email,
+      role,
+      walletAddress: secretRows[0].wallet_address,
+      verification,
+    });
+  } catch (err) {
+    console.error("/auth/me 오류:", err);
+    res.status(500).json({ message: "사용자 정보 조회에 실패했습니다." });
   }
 });
 
