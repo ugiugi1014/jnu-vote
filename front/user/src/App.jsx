@@ -16,12 +16,10 @@ export default function App() {
   // none: 미신청 | pending: 검토중 | approved: 승인완료
   const [userStatus, setUserStatus] = useState("none");
 
-  const handleLogin = (id, wallet) => {
+  const handleLogin = (id, wallet, role) => {
     setStudentId(id);
     setWallet(wallet);
-    if (id === "admin") { setPage("admin"); return; }
-    if (id === "user") {setUserStatus("approved");}
-    if (id === "user1") {}
+    if (role === "admin") { setPage("admin"); return; }
     setPage("list");
   };
 

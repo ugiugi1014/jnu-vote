@@ -3,6 +3,7 @@ import "../styles/LoginPage.css";
 import { createWallet } from "../services/walletService.js";
 
 const LOGO = "/src/jejun.png";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function LoginPage({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -18,27 +19,56 @@ export default function LoginPage({ onLogin }) {
     if (email === "user") { onLogin("user", null); return; }
     if (email === "user1") { onLogin("user1", null); return; }
     // TODO: 백엔드 API 엔드포인트 확인 후 변경
-    await fetch('/api/auth/send-code', {
-     method: 'POST',
-     body: JSON.stringify({ email }),
-     headers: { 'Content-Type': 'application/json' }
-    });
-    setStep(2);
+    try {
+      const res = await fetch('${BASE_URL}/auth/send-code', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+        headers: { 'Content-Type': 'application/json' }
+        });
+      if (!res.ok) {
+        switch (res.status) {
+          case 400: throw new Error('잘못된 요청입니다.');
+          case 401: throw new Error('학교 이메일이 아닙니다.');
+          case 403: throw new Error('접근 권한이 없습니다.');
+          case 404: throw new Error('등록되지 않은 이메일입니다.');
+          case 429: throw new Error('잠금되었습니다.');
+          case 500: throw new Error('서버 오류가 발생했습니다.');
+          default: throw new Error('알 수 없는 오류가 발생했습니다.');
+        }
+      }
+      setStep(2);
+    } catch(err) {
+      alert(err.message);
+    }
   };
 
   const handleConfirm = async () => {
     if (!isCodeValid) return;
   
-    // TODO: 백엔드 응답 키 이름 확인 후 변경 (serverSecret 부분)
-    const res = await fetch('/api/auth/verify-code', {
-      method: 'POST',
-      body: JSON.stringify({ email, code }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const { serverSecret } = await res.json();
-  
-    const { wallet } = await createWallet(email, serverSecret);
-    onLogin(email, wallet);
+    try {
+      // TODO: 백엔드 응답 키 이름 확인 후 변경 (serverSecret 부분)
+      const res = await fetch('${BASE_URL}/api/auth/verify-code', {
+        method: 'POST',
+        body: JSON.stringify({ email, code }),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) {
+        switch (res.status) {
+          case 400: throw new Error('잘못된 요청입니다.');
+          case 401: throw new Error('인증코드가 올바르지 않습니다.');
+          case 403: throw new Error('접근 권한이 없습니다.');
+          case 404: throw new Error('만료된 인증코드입니다.');
+          case 429: throw new Error('잠금되었습니다.');
+          case 500: throw new Error('서버 오류가 발생했습니다.');
+          default: throw new Error('알 수 없는 오류가 발생했습니다.');
+        }
+      }
+      const { serverSecret, role } = await res.json();
+      const { wallet } = await createWallet(email, serverSecret);
+      onLogin(email, wallet, role);
+    } catch(err) {
+      alert(err.message);
+    }
   };
 
   return (
