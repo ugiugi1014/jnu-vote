@@ -20,7 +20,7 @@ export default function LoginPage({ onLogin }) {
     if (email === "user1") { onLogin("user1", null); return; }
     // TODO: 백엔드 API 엔드포인트 확인 후 변경
     try {
-      const res = await fetch('${BASE_URL}/auth/send-code', {
+      const res = await fetch(`${BASE_URL}/auth/send-code`, {
         method: 'POST',
         body: JSON.stringify({ email }),
         headers: { 'Content-Type': 'application/json' }
@@ -31,7 +31,7 @@ export default function LoginPage({ onLogin }) {
           case 401: throw new Error('학교 이메일이 아닙니다.');
           case 403: throw new Error('접근 권한이 없습니다.');
           case 404: throw new Error('등록되지 않은 이메일입니다.');
-          case 429: throw new Error('잠금되었습니다.');
+          case 429: throw new Error('로그인 시도 10회 초과로 잠금었습니다.\n30분 후에 다시 시도해주세요');
           case 500: throw new Error('서버 오류가 발생했습니다.');
           default: throw new Error('알 수 없는 오류가 발생했습니다.');
         }
@@ -47,7 +47,7 @@ export default function LoginPage({ onLogin }) {
   
     try {
       // TODO: 백엔드 응답 키 이름 확인 후 변경 (serverSecret 부분)
-      const res = await fetch('${BASE_URL}/api/auth/verify-code', {
+      const res = await fetch(`${BASE_URL}/auth/verify-code`, {
         method: 'POST',
         body: JSON.stringify({ email, code }),
         headers: { 'Content-Type': 'application/json' }
