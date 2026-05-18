@@ -63,3 +63,13 @@ export async function castVote(connectedWallet, contractAddress, abi, nullifier,
 export function privateKeyToBigInt(privateKey) {
   return BigInt(privateKey);
 }
+
+export function restoreWallet(privateKey) {
+  if (!privateKey) return null;
+  const wallet = new ethers.Wallet(privateKey);
+  return {
+    address: wallet.address,
+    privateKey: wallet.privateKey,
+    wallet,
+  };
+}
