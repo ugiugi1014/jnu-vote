@@ -26,12 +26,22 @@ function Header({ studentId, onLogout }) {
 /* ── 학생증 업로드 화면 ── */
 function UploadForm({ studentId, onLogout, onSubmit }) {
   const [file, setFile] = useState(null);
+  const [verificationStudentId, setVerificationStudentId] = useState("");
   const [preview, setPreview] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
   const inputRef = useRef();
 
   const handleFile = (f) => {
     if (!f) return;
     setFile(f);
+    setError("");
+
+    if (f.type === "application/pdf") {
+      setPreview("pdf");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => setPreview(e.target.result);
     reader.readAsDataURL(f);
@@ -54,10 +64,27 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
             관리자 검토 후 투표 권한이 부여됩니다.
           </p>
 
+          <div className="upload-field">
+            <label className="upload-label">학번</label>
+            <input
+              className="upload-input"
+              value={verificationStudentId}
+              placeholder="학생증에 표시된 학번"
+              onChange={(event) => {
+                setVerificationStudentId(event.target.value);
+                setError("");
+              }}
+            />
+          </div>
+
           {/* 미리보기 or 드롭존 */}
           {preview ? (
             <div className="upload-preview">
-              <img src={preview} alt="학생증 미리보기" />
+              {preview === "pdf" ? (
+                <div className="upload-pdf-preview">PDF 파일 선택됨</div>
+              ) : (
+                <img src={preview} alt="학생증 미리보기" />
+              )}
             </div>
           ) : (
             <div
@@ -95,12 +122,24 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
             ⚠️ 학생증의 이름과 학번이 명확히 보여야 합니다. 개인정보는 인증 목적으로만 사용됩니다.
           </div>
 
+          {error && <div className="upload-error">{error}</div>}
+
           <button
             className="upload-btn"
-            disabled={!file}
-            onClick={() => onSubmit()}
+            disabled={!file || !verificationStudentId.trim() || submitting}
+            onClick={async () => {
+              try {
+                setSubmitting(true);
+                setError("");
+                await onSubmit(file, verificationStudentId.trim());
+              } catch (err) {
+                setError(err.message);
+              } finally {
+                setSubmitting(false);
+              }
+            }}
           >
-            제출하기
+            {submitting ? "제출 중..." : "제출하기"}
           </button>
           <button className="upload-back-btn" onClick={onLogout}>로그아웃</button>
         </div>

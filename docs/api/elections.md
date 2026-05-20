@@ -206,6 +206,47 @@ pending → active → closed → tallied
 
 ---
 
+## `PUT /elections/:id/candidates/bulk`
+
+후보자 일괄 교체. 관리자 페이지의 선거 수정에서 사용한다.
+
+**권한**: admin
+
+**상태 제약**: `pending` 상태에서만 가능
+**요청**:
+```json
+{
+  "candidates": [
+    {
+      "name": "김제주",
+      "description": "경영학과 3학년\n학생 중심 대학",
+      "candidate_index": 0
+    },
+    {
+      "name": "이한라",
+      "description": "컴퓨터공학과 4학년\n투명한 선거 운영",
+      "candidate_index": 1
+    }
+  ]
+}
+```
+
+**성공 (200)**:
+```json
+{
+  "message": "후보 일괄 교체 완료",
+  "count": 2
+}
+```
+
+**제약**:
+- `candidates`는 1~3개 배열
+- 각 후보는 `name`, `candidate_index` 필수
+- `candidate_index`는 `0, 1, 2` 중 하나이며 중복 불가
+- 서버 트랜잭션으로 기존 후보 삭제와 새 후보 등록을 함께 처리
+
+---
+
 ## `GET /elections/:id/candidates`
 
 후보자 목록.
@@ -220,4 +261,4 @@ pending → active → closed → tallied
 
 **권한**: admin
 
-**활용**: 선거 수정 시 "후보 일괄 교체" 패턴 (전체 삭제 → 재등록).
+**활용**: 단일 후보 삭제용. 선거 수정 화면에서 후보 전체를 바꿀 때는 `PUT /elections/:id/candidates/bulk` 사용 권장.

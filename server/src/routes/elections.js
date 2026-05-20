@@ -279,16 +279,25 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
   try {
     const electionId = req.params.id;
 
+    const election = await getElectionById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: "선거 없음" });
+    }
+
+    if (election.status !== ELECTION_STATUS.PENDING) {
+      return res.status(400).json({ message: "선거 시작 실패 (pending 상태만 가능)" });
+    }
+
+    if (!election.contract_address || !election.token_contract_address) {
+      return res.status(400).json({ message: "contract_address, token_contract_address 등록 후 시작 가능" });
+    }
+
     const [result] = await db.query(
       `UPDATE elections
        SET status=?
        WHERE id=? AND status=?`,
       [ELECTION_STATUS.ACTIVE, electionId, ELECTION_STATUS.PENDING]
     );
-
-    if (result.affectedRows === 0) {
-      return res.status(400).json({ message: "선거 시작 실패 (pending 상태만 가능)" });
-    }
 
     const [rows] = await db.query(
       `SELECT id, end_time FROM elections WHERE id=?`,
@@ -423,6 +432,87 @@ router.post("/:id/candidates", auth, adminOnly, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "서버 오류" });
+  }
+});
+
+/*
+=====================================================
+  9-1) 후보 일괄 교체 (pending 상태만 가능)
+  PUT /elections/:id/candidates/bulk
+=====================================================
+*/
+router.put("/:id/candidates/bulk", auth, adminOnly, async (req, res) => {
+  const electionId = req.params.id;
+  const { candidates } = req.body;
+
+  if (!Array.isArray(candidates) || candidates.length === 0 || candidates.length > 3) {
+    return res.status(400).json({ message: "candidates는 1~3개 배열이어야 합니다." });
+  }
+
+  const seenIndexes = new Set();
+  for (const candidate of candidates) {
+    const candidateIndex = Number(candidate.candidate_index);
+
+    if (!candidate.name || candidate.candidate_index === undefined) {
+      return res.status(400).json({ message: "name, candidate_index 필수" });
+    }
+
+    if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 2) {
+      return res.status(400).json({
+        message: "candidate_index는 tally.circom 기준 0, 1, 2 중 하나여야 합니다.",
+      });
+    }
+
+    if (seenIndexes.has(candidateIndex)) {
+      return res.status(400).json({ message: "candidate_index 중복" });
+    }
+
+    seenIndexes.add(candidateIndex);
+  }
+
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [electionRows] = await conn.query(
+      `SELECT ${ELECTION_PUBLIC_COLUMNS} FROM elections WHERE id=? FOR UPDATE`,
+      [electionId]
+    );
+
+    if (electionRows.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ message: "선거 없음" });
+    }
+
+    if (electionRows[0].status !== ELECTION_STATUS.PENDING) {
+      await conn.rollback();
+      return res.status(400).json({ message: "pending 상태에서만 후보 수정 가능" });
+    }
+
+    await conn.query(`DELETE FROM candidates WHERE election_id=?`, [electionId]);
+
+    for (const candidate of candidates) {
+      await conn.query(
+        `INSERT INTO candidates (election_id, name, description, candidate_index)
+         VALUES (?, ?, ?, ?)`,
+        [
+          electionId,
+          candidate.name,
+          candidate.description || null,
+          Number(candidate.candidate_index),
+        ]
+      );
+    }
+
+    await conn.commit();
+    res.json({ message: "후보 일괄 교체 완료", count: candidates.length });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ message: "후보 일괄 교체 실패", error: err.message });
+  } finally {
+    conn.release();
   }
 });
 

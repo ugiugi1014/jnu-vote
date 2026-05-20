@@ -136,7 +136,24 @@ export default function App() {
   const handleResult = (vote) => { setCurrentVote(vote); setPage("result"); };
   const handleBack = () => setPage("list");
 
-  const handleUploadSubmit = () => {
+  const handleUploadSubmit = async (file, verificationStudentId) => {
+    if (!file || !token) return;
+
+    const formData = new FormData();
+    formData.append("student_id", verificationStudentId);
+    formData.append("file", file);
+
+    const res = await fetch(`${API_BASE_URL}/verification/request`, {
+      method: "POST",
+      headers: authHeaders,
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.message || "학생증 인증 요청에 실패했습니다.");
+    }
+
     setUserStatus("pending");
     setPage("list");
   };

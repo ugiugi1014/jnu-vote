@@ -87,6 +87,13 @@ Authorization: Bearer <JWT>
   PATCH /verification/admin/:id    관리자 승인 → status: approved
   POST /elections/:id/tokens/issue 관리자 토큰 일괄 발행
 
+[관리자 선거 설정]
+  POST /elections                   선거 생성
+  POST /elections/:id/candidates    후보자 등록
+  PUT /elections/:id/candidates/bulk 후보자 일괄 교체
+  POST /elections/:id/contract      VotingSystem/VotingToken 주소 등록
+  POST /elections/:id/start         선거 시작
+
 [투표]
   POST /auth/verify-code           재로그인 (또는 토큰 유지 시 GET /auth/me)
   GET /elections/:id/coordinator/public-key  코디네이터 ECDH 공개키
