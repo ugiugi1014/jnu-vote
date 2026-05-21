@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Icon } from "../components/Icons";
-import { TABS, VOTES } from "../data/mockData";
+//import { TABS, VOTES } from "../data/mockData";
 import "../styles/VoteListPage.css";
 
 const LOGO = "/src/jejun.png";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function AuthStatus({ status, onGoUpload }) {
   if (status === "approved") {
@@ -22,8 +23,18 @@ function AuthStatus({ status, onGoUpload }) {
 
 export default function VoteListPage({ studentId, onLogout, onVote, onResult, userStatus, onGoUpload }) {
   const [activeTab, setActiveTab] = useState("active");
-  const votes = VOTES[activeTab] || [];
+  const [votes, setVotes] = useState([]);
   const isApproved = userStatus === "approved";
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${BASE_URL}/elections`)
+      .then(r => r.json())
+      .then(data =>{
+        if (!cancelled) setVotes((data || []).filter(v => v.status === activeTab))
+      });
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const handleVoteClick = (vote) => {
     if (!isApproved) { onGoUpload(); return; }
@@ -56,13 +67,17 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
         <p className="page-desc">진행중인 투표에 참여하거나 결과를 확인하세요</p>
 
         <div className="tab-bar">
-          {TABS.map(tab => (
+          {[
+            {key: "active", label: "진행중"},
+            {key: "pending", label: "예정"},
+            {key: "closed", label: "종료"},
+          ].map(tab => (
             <button
               key={tab.key}
               className={`tab-item ${activeTab === tab.key ? "active" : ""}`}
               onClick={() => setActiveTab(tab.key)}
             >
-              {tab.label} ({tab.count})
+              {tab.label}
             </button>
           ))}
         </div>
@@ -74,15 +89,15 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
               <div className="vote-card-top">
                 <span className="badge badge-outline">{vote.category}</span>
                 {vote.status === "active" && <span className="badge badge-active">진행중</span>}
-                {vote.status === "ended"  && <span className="badge badge-ended">종료</span>}
+                {vote.status === "closed"  && <span className="badge badge-ended">종료</span>}
                 {vote.voted              && <span className="badge badge-voted">투표 완료</span>}
               </div>
               <div className="vote-card-title">{vote.title}</div>
-              <div className="vote-card-desc">{vote.desc}</div>
+              <div className="vote-card-desc">{vote.description}</div>
               <div className="vote-card-bottom">
                 <div className="vote-card-meta">
-                  <span className="meta-item"><Icon.Calendar />{vote.period}</span>
-                  {vote.voters && <span className="meta-item"><Icon.People color="#999" />투표자 {vote.voters}</span>}
+                  <span className="meta-item"><Icon.Calendar />{vote.start_time} ~ {vote.end_time}</span>
+                  {vote.voted_count != null && <span className="meta-item"><Icon.People color="#999" />투표자 {vote.voted_count}</span>}
                 </div>
                 {vote.status === "active" && !vote.voted && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -100,7 +115,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
                     )}
                   </div>
                 )}
-                {vote.status === "ended" &&
+                {vote.status === "closed" &&
                   <button className="vote-button vote-button-outline" onClick={() => onResult(vote)}>결과 보기</button>}
               </div>
             </div>

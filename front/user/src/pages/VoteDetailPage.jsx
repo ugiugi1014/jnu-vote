@@ -1,49 +1,63 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Icon } from "../components/Icons";
 import { generateECDHKeyPair, deriveSharedKeyAndDispose, importCoordPublicKey, exportPublicKey, exportSharedKeyAsBigInt } from '../services/ecdhService';
 import { privateKeyToBigInt } from '../services/walletService';
 import { generateSecret, generateVoteProof } from '../services/zkpService';
 import { encryptCandidate } from '../services/poseidonService';
-import { CANDIDATES } from "../data/mockData";
+//import { CANDIDATES } from "../data/mockData"; //후보자 목록 mock 데이터
 import "../styles/VoteDetailPage.css";
 
 const LOGO = "/src/jejun.png";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function VoteDetailPage({ vote, onBack, wallet }) {
   const [selected, setSelected] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showDonePopup, setShowDonePopup] = useState(false);
-  const selectedCandidate = CANDIDATES.find(c => c.id === selected);
+  const [candidates, setCandidates] = useState([]);
+
+  useEffect(() => {
+    fetch(`${BASE_URL}/elections/${vote.id}/candidates`)
+      .then(r => r.json())
+      .then(data => setCandidates(data || []))
+      .catch(() => alert("후보자 목록 로딩 실패"));
+  }, [vote.id]);
+
+  const selectedCandidate = candidates.find(c => c.candidate_index === selected);
+  const maxCandidate = candidates.length;
 
   const handleConfirm = async () => {
-    // const coordJWK = await fetch('/api/coordinator/publicKey').then(r => r.json()); // 백엔드 연결 시 주석 해제
-    const coordJWK = {"kty":"EC","x":"UyY8smusO47QR3tLqw8l1jvax1o3qtWkPIrC-MsYNq4","y":"aFHrGgBitQDva9i_UWEgEcn3cM5T2JlY4GunXMQvQ18","crv":"P-256"}; // mock
+    try{
+      const coordJWK = await fetch(`${BASE_URL}/elections/${vote.id}/coordinator/public-key`).then(r => r.json()).catch(() => alert("투표처리 중 오류가 발생했습니다. 다시 시도해주세요"));
+      //const coordJWK = {"kty":"EC","x":"UyY8smusO47QR3tLqw8l1jvax1o3qtWkPIrC-MsYNq4","y":"aFHrGgBitQDva9i_UWEgEcn3cM5T2JlY4GunXMQvQ18","crv":"P-256"}; // mock
 
-    //키쌍 생성
-    const keyPair = await generateECDHKeyPair();
-    //관리자 공개키 가져오기
-    const coordPublicKey = await importCoordPublicKey(coordJWK);
-    //투표자 공개키 가져오기
-    const voterPublicKey = await exportPublicKey(keyPair.publicKey);
-    //공유키 생성
-    const sharedKey = await deriveSharedKeyAndDispose(keyPair, coordPublicKey);
-    //공유키 타입변환
-    const sharedKeyBigInt = await exportSharedKeyAsBigInt(sharedKey);
-    //지갑 키 가져오기
-    const walletPrivateKeyBigInt = privateKeyToBigInt(wallet.privateKey);
-    //지갑 생성 및 지갑을 scret으로 사용
-    const secret = await generateSecret(walletPrivateKeyBigInt, vote.id);
-    //투표 유효성 검사
-    // TODO: 3을 maxCandidate(from vote 객체)로 변경
-    const { proof, nullifier } = await generateVoteProof(secret, selected, 3);
-    // TODO: castVote(connectedWallet, contractAddress, abi, nullifier, proof, ciphertext) 연결
-    const { ciphertext, nonce } = await encryptCandidate(selected, sharedKeyBigInt);
+      //키쌍 생성
+      const keyPair = await generateECDHKeyPair();
+      //관리자 공개키 가져오기
+      const coordPublicKey = await importCoordPublicKey(coordJWK);
+      //투표자 공개키 가져오기
+      const voterPublicKey = await exportPublicKey(keyPair.publicKey);
+      //공유키 생성
+      const sharedKey = await deriveSharedKeyAndDispose(keyPair, coordPublicKey);
+      //공유키 타입변환
+      const sharedKeyBigInt = await exportSharedKeyAsBigInt(sharedKey);
+      //지갑 키 가져오기
+      const walletPrivateKeyBigInt = privateKeyToBigInt(wallet.privateKey);
+      //지갑 생성 및 지갑을 secret으로 사용
+      const secret = await generateSecret(walletPrivateKeyBigInt, vote.id);
+      //투표 유효성 검사
+      const { proof, nullifier } = await generateVoteProof(secret, selected, maxCandidate);
+      // TODO: castVote(connectedWallet, contractAddress, abi, nullifier, proof, ciphertext) 연결
+      const { ciphertext, nonce } = await encryptCandidate(selected, sharedKeyBigInt);
 
-    console.log("공유키:", sharedKey);
-    console.log("투표자 공개키:", voterPublicKey);
-    // 다음: Poseidon 암호화 → snarkjs proof → 체인 제출
-    setShowModal(false);
-    setShowDonePopup(true);
+      console.log("공유키:", sharedKey);
+      console.log("투표자 공개키:", voterPublicKey);
+      // 다음: Poseidon 암호화 → snarkjs proof → 체인 제출
+      setShowModal(false);
+      setShowDonePopup(true);
+    } catch (err){
+
+    }
   };
 
   const handleDoneConfirm = () => {
@@ -63,8 +77,8 @@ export default function VoteDetailPage({ vote, onBack, wallet }) {
           <div className="info-icon"><Icon.Ballot /></div>
           <div className="info-body">
             <div className="info-title">{vote.title}</div>
-            <div className="info-deadline">투표 마감: 2026-03-27 18:00</div>
-            <div className="info-desc">{vote.desc}</div>
+            <div className="info-deadline">투표 마감: {vote.end_time}</div>
+            <div className="info-desc">{vote.description}</div>
           </div>
         </div>
 
@@ -74,18 +88,18 @@ export default function VoteDetailPage({ vote, onBack, wallet }) {
         </div>
 
         <div className="section-title">후보자 선택</div>
-        {CANDIDATES.map(c => (
+        {candidates.map(c => (
           <div
             key={c.id}
-            className={`candidate-card ${selected === c.id ? "selected" : ""}`}
-            onClick={() => setSelected(c.id)}
+            className={`candidate-card ${selected === c.candidate_index ? "selected" : ""}`}
+            onClick={() => setSelected(c.candidate_index)}
           >
             <div className="select-indicator" />
-            <div className="candidate-number">{c.id}</div>
+            <div className="candidate-number">{c.candidate_index}</div>
             <div className="candidate-info">
               <div className="candidate-name">{c.name}</div>
-              <div className="candidate-dept">{c.dept}</div>
-              <div className="candidate-slogan">{c.slogan}</div>
+              <div className="candidate-dept">{c.description}</div>
+              {/*<div className="candidate-slogan">{c.slogan}</div>*/}
             </div>
           </div>
         ))}
@@ -94,7 +108,7 @@ export default function VoteDetailPage({ vote, onBack, wallet }) {
       {/* 하단 버튼 */}
       <div className="bottom-actions-inner">
         <button className="btn btn-cancel" onClick={() => setSelected(null)}>취소</button>
-        <button className="btn btn-vote" disabled={!selected} onClick={() => setShowModal(true)}>투표하기</button>
+        <button className="btn btn-vote" disabled={selected === null} onClick={() => setShowModal(true)}>투표하기</button>
       </div>
 
       {/* 투표 확인 모달 */}
@@ -105,7 +119,7 @@ export default function VoteDetailPage({ vote, onBack, wallet }) {
             <div className="modal-subtitle">선택한 후보로 투표하시겠습니까?</div>
             <div className="modal-candidate-box">
               <div className="modal-candidate-name">{selectedCandidate.name}</div>
-              <div className="modal-candidate-slogan">{selectedCandidate.slogan}</div>
+              <div className="modal-candidate-dept">{selectedCandidate.description}</div>
             </div>
             <div className="modal-warning">
               <Icon.Warn color="#b45309" />투표 후에는 변경할 수 없습니다

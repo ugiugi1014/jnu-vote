@@ -201,4 +201,35 @@ router.patch("/admin/:id", auth, adminOnly, async (req, res) => {
   }
 });
 
+// 재학증명서 진위확인
+router.post('/verify-document', async (req, res) => {
+  const { docNo } = req.body;
+
+  if (!docNo || docNo.length !== 16 || !/^[a-zA-Z0-9]+$/.test(docNo)) {
+    return res.status(400).json({ valid: false, reason: 'invalid_format' });
+  }
+
+  try {
+    const response = await fetch(
+      'https://unv.doculink.co.kr/servlet/WMVERIFY?COMMAND=GETPRINTVIEWEXE',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': 'https://unc.doculink.co.kr/',
+          //'Origin': 'https://unc.doculink.co.kr',
+        },
+        body: new URLSearchParams({ DOC_NO: docNo, GUBUN: 'null' }),
+      }
+    );
+
+    const data = await response.json();
+    const isValid = data.SUCC === "Y";
+    res.json({ valid: isValid });
+
+  } catch (err) {
+    res.status(500).json({ valid: false, reason: 'server_error' });
+  }
+});
+
 module.exports = router;

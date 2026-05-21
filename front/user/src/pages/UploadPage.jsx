@@ -31,6 +31,10 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef();
+  const [docNo1, setDocNo1] = useState("");
+  const [docNo2, setDocNo2] = useState("");
+  const [docNo3, setDocNo3] = useState("");
+  const [docNo4, setDocNo4] = useState("");
 
   const handleFile = (f) => {
     if (!f) return;
@@ -76,7 +80,35 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
               }}
             />
           </div>
-
+          <div className="upload-field">
+            <label className="upload-label">재학증명서 문서번호</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {[
+                [docNo1, setDocNo1],
+                [docNo2, setDocNo2],
+                [docNo3, setDocNo3],
+                [docNo4, setDocNo4],
+              ].map(([val, setter], i) => (
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    className="upload-input"
+                    value={val}
+                    maxLength={4}
+                    placeholder="XXXX"
+                    style={{ width: 72, textAlign: "center", letterSpacing: 2 }}
+                    onChange={e => {
+                      setter(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase());
+                      setError("");
+                    }}
+                  />
+                  {i < 3 && <span style={{ color: "#aaa" }}>-</span>}
+                </span>
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+              증명서 좌측 상단의 진위확인 문서번호를 입력하세요
+            </p>
+          </div>
           {/* 미리보기 or 드롭존 */}
           {preview ? (
             <div className="upload-preview">
@@ -126,11 +158,32 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
 
           <button
             className="upload-btn"
-            disabled={!file || !verificationStudentId.trim() || submitting}
+            disabled={
+              !file ||
+              !verificationStudentId.trim() ||
+              [docNo1, docNo2, docNo3, docNo4].some(v => v.length !== 4) ||
+              submitting
+            }
             onClick={async () => {
               try {
                 setSubmitting(true);
                 setError("");
+
+                //진위확인
+                const docNo = docNo1 + docNo2 + docNo3 + docNo4;
+                alert("요청시작: "+ docNo);
+                const verifyRes = await fetch('/api/verification/verify-document', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ docNo }),
+                });
+                
+                const { valid } = await verifyRes.json();
+                if (!valid) {
+                  setError("유효하지 않은 재학증명서입니다. 문서번호를 다시 확인해주세요.");
+                  return;
+                }
+
                 await onSubmit(file, verificationStudentId.trim());
               } catch (err) {
                 setError(err.message);
@@ -139,7 +192,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
               }
             }}
           >
-            {submitting ? "제출 중..." : "제출하기"}
+            {submitting ? "확인 중..." : "제출하기"}
           </button>
           <button className="upload-back-btn" onClick={onLogout}>로그아웃</button>
         </div>

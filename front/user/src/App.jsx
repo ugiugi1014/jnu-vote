@@ -17,7 +17,7 @@ function normalizeVerificationStatus(verification) {
 }
 
 export default function App() {
-  const [page, setPage] = useState("login");
+  const [page, setPage] = useState("upload");
   const [studentId, setStudentId] = useState("");
   const [role, setRole] = useState("user");
   const [token, setToken] = useState(null);
