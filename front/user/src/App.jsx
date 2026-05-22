@@ -117,11 +117,12 @@ export default function App() {
   const handleResult = (vote) => { setCurrentVote(vote); setPage("result"); };
   const handleBack = () => setPage("list");
 
-  const handleUploadSubmit = async (file, verificationStudentId) => {
+  const handleUploadSubmit = async (file, studentId, docNo) => {
     if (!file || !token) return;
 
     const formData = new FormData();
-    formData.append("student_id", verificationStudentId);
+    formData.append("student_id", studentId);
+    formData.append("doc_no", docNo);
     formData.append("file", file);
 
     const res = await fetch(`${API_BASE_URL}/verification/request`, {
@@ -132,10 +133,11 @@ export default function App() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      throw new Error(data?.message || "학생증 인증 요청에 실패했습니다.");
+      throw new Error(data?.message || "인증 요청에 실패했습니다.");
     }
 
-    setUserStatus("pending");
+    const { status } = await res.json();
+    setUserStatus(status);
     setPage("list");
   };
 

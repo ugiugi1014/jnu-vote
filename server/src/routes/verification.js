@@ -58,27 +58,59 @@ function removeUploadedFile(filePath) {
 router.post("/request", auth, upload.single("file"), async (req, res) => {
   try {
     const email = req.user.email;
-    const { student_id } = req.body;
+    const { doc_no, student_id } = req.body;
 
     if (!student_id) {
       return res.status(400).json({ message: "student_id 필수" });
     }
 
+    if (!doc_no || doc_no.length !== 16 || !/^[a-zA-Z0-9]+$/.test(doc_no)) {
+      return res.status(400).json({ message: "문서번호 형식이 올바르지 않습니다." });
+    }
+
     const filePath = req.file ? path.relative(process.cwd(), req.file.path) : null;
+
+    // KICA 진위확인
+    let autoApproved = false;
+    try {
+      const kicaRes = await fetch(
+        'https://unv.doculink.co.kr/servlet/WMVERIFY?COMMAND=GETPRINTVIEWEXE',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer': 'https://unc.doculink.co.kr/',
+          },
+          body: new URLSearchParams({ DOC_NO: doc_no, GUBUN: 'null' }),
+        }
+      );
+      const kicaData = await kicaRes.json();
+
+      if (kicaData.SUCC != "Y") {
+        return res.status(400).json({ message: "유효하지 않은 재학증명서입니다. 문서번호를 다시 확인해주세요." });
+      }
+
+      autoApproved = true;
+    } catch (kicaErr) {
+      console.error("KICA 서버 오류:", kicaErr);
+      // KICA 오류 시 pending으로 fallback
+    }
+
+    const status = autoApproved ? "approved" : "pending";
 
     await db.query(
       `INSERT INTO user_verifications (email, student_id, file_path, status)
-       VALUES (?, ?, ?, 'pending')
-       ON DUPLICATE KEY UPDATE
-         student_id = VALUES(student_id),
-         file_path = COALESCE(VALUES(file_path), file_path),
-         status = 'pending',
-         note = NULL,
-         reviewed_at = NULL`,
-      [email, student_id, filePath]
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        student_id = VALUES(student_id),
+        file_path = COALESCE(VALUES(file_path), file_path),
+        status = VALUES(status),
+        note = NULL,
+        reviewed_at = ${autoApproved ? "NOW()" : "NULL"}`,
+      [email, student_id, filePath, status]
     );
 
-    res.json({ message: "인증 신청 완료", status: "pending", file_path: filePath });
+    res.json({ message: "인증 신청 완료", status });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "서버 오류" });

@@ -747,11 +747,9 @@ function VoterSection({ token }) {
                     <button className="action-btn info" onClick={() => setPhotoTarget(request)}>파일 확인</button>
                   )}
                   {request.status === "pending" && (
-                    <>
-                      <button className="action-btn info" onClick={() => decideVerification(request.id, "approved")}>승인</button>
-                      <button className="action-btn danger" onClick={() => decideVerification(request.id, "rejected")}>거절</button>
-                    </>
+                    <button className="action-btn info" onClick={() => decideVerification(request.id, "approved")}>승인</button>
                   )}
+                  <button className="action-btn danger" onClick={() => decideVerification(request.id, "rejected")}>거절</button>
                 </td>
               </tr>
             ))}

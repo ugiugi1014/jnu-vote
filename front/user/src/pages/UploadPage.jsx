@@ -25,8 +25,8 @@ function Header({ studentId, onLogout }) {
 
 /* ── 학생증 업로드 화면 ── */
 function UploadForm({ studentId, onLogout, onSubmit }) {
-  const [file, setFile] = useState(null);
   const [verificationStudentId, setVerificationStudentId] = useState("");
+  const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -62,10 +62,9 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
       <Header studentId={studentId} onLogout={onLogout} />
       <div className="upload-wrapper">
         <div className="upload-card">
-          <div className="upload-card-title">학생증 인증</div>
+          <div className="upload-card-title">재학증명서 인증</div>
           <p className="upload-card-desc">
-            투표 참여를 위해 학생증 사진을 업로드해주세요.<br />
-            관리자 검토 후 투표 권한이 부여됩니다.
+            투표 참여를 위해 재학증명서 사진을 업로드해주세요.<br />.
           </p>
 
           <div className="upload-field">
@@ -74,12 +73,13 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
               className="upload-input"
               value={verificationStudentId}
               placeholder="학생증에 표시된 학번"
-              onChange={(event) => {
-                setVerificationStudentId(event.target.value);
+              onChange={(e) => {
+                setVerificationStudentId(e.target.value);
                 setError("");
               }}
             />
           </div>
+
           <div className="upload-field">
             <label className="upload-label">재학증명서 문서번호</label>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -125,7 +125,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
               onDrop={handleDrop}
               onDragOver={e => e.preventDefault()}
             >
-              <div className="upload-dropzone-icon">🪪</div>
+              <div className="upload-dropzone-icon">📄</div>
               <p className="upload-dropzone-text">
                 <strong>클릭</strong>하거나 파일을 여기에 드래그하세요<br />
                 JPG, PNG, PDF 지원
@@ -168,23 +168,9 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
               try {
                 setSubmitting(true);
                 setError("");
-
                 //진위확인
                 const docNo = docNo1 + docNo2 + docNo3 + docNo4;
-                alert("요청시작: "+ docNo);
-                const verifyRes = await fetch('/api/verification/verify-document', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ docNo }),
-                });
-                
-                const { valid } = await verifyRes.json();
-                if (!valid) {
-                  setError("유효하지 않은 재학증명서입니다. 문서번호를 다시 확인해주세요.");
-                  return;
-                }
-
-                await onSubmit(file, verificationStudentId.trim());
+                await onSubmit(file, verificationStudentId.trim(), docNo);
               } catch (err) {
                 setError(err.message);
               } finally {
