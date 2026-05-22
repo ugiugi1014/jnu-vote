@@ -76,7 +76,7 @@ none → pending → approved / rejected
 }
 ```
 
-**활용**: 학생증 심사 대기 화면에서 주기적 폴링.
+**활용**: 재학증명서 심사 대기 화면에서 주기적 폴링.
 
 ---
 
@@ -108,7 +108,7 @@ none → pending → approved / rejected
 
 ## `GET /verification/admin/:id/file`
 
-학생증 사진 스트림. **승인/거절 전까지만** 접근 가능 (그 후엔 file_path 가 NULL 로 비워지고 파일 삭제됨).
+재학증명서 파일 스트림. **승인/거절 전까지만** 접근 가능 (그 후엔 file_path 가 NULL 로 비워지고 파일 삭제됨).
 
 **권한**: admin  
 **응답**: 파일 바이트 스트림 (Content-Type 은 파일에 따라)
@@ -135,7 +135,7 @@ const url = URL.createObjectURL(blob);
 
 ## `PATCH /verification/admin/:id`
 
-학생증 승인/거절.
+재학증명서 인증 승인/거절.
 
 **권한**: admin  
 **요청**:

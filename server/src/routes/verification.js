@@ -199,7 +199,7 @@ router.get("/admin", auth, adminOnly, async (req, res) => {
 });
 
 // GET /verification/admin/:id/file
-// 학생증 사진 스트림 (관리자 전용, 승인/거절 전까지만 접근 가능)
+// 재학증명서 파일 스트림 (관리자 전용, 승인/거절 전까지만 접근 가능)
 // 프론트는 fetch + Authorization 헤더로 받아 blob URL 로 <img> 렌더 — 통합 TODO
 router.get("/admin/:id/file", auth, adminOnly, async (req, res) => {
   try {

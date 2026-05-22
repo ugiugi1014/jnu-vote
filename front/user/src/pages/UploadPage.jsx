@@ -23,7 +23,7 @@ function Header({ studentId, onLogout }) {
   );
 }
 
-/* ── 학생증 업로드 화면 ── */
+/* ── 재학증명서 업로드 화면 ── */
 function UploadForm({ studentId, onLogout, onSubmit }) {
   const [verificationStudentId, setVerificationStudentId] = useState("");
   const [file, setFile] = useState(null);
@@ -64,7 +64,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
         <div className="upload-card">
           <div className="upload-card-title">재학증명서 인증</div>
           <p className="upload-card-desc">
-            투표 참여를 위해 재학증명서 사진을 업로드해주세요.<br />.
+            투표 참여를 위해 재학증명서 파일을 업로드해주세요.
           </p>
 
           <div className="upload-field">
@@ -72,7 +72,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
             <input
               className="upload-input"
               value={verificationStudentId}
-              placeholder="학생증에 표시된 학번"
+              placeholder="재학증명서에 표시된 학번"
               onChange={(e) => {
                 setVerificationStudentId(e.target.value);
                 setError("");
@@ -115,7 +115,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
               {preview === "pdf" ? (
                 <div className="upload-pdf-preview">PDF 파일 선택됨</div>
               ) : (
-                <img src={preview} alt="학생증 미리보기" />
+                <img src={preview} alt="재학증명서 미리보기" />
               )}
             </div>
           ) : (
@@ -151,7 +151,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
           )}
 
           <div className="upload-notice">
-            ⚠️ 학생증의 이름과 학번이 명확히 보여야 합니다. 개인정보는 인증 목적으로만 사용됩니다.
+            ⚠️ 재학증명서의 이름과 학번이 명확히 보여야 합니다. 개인정보는 인증 목적으로만 사용됩니다.
           </div>
 
           {error && <div className="upload-error">{error}</div>}
@@ -197,7 +197,7 @@ function WaitingScreen({ studentId, onLogout, onRefresh }) {
           <div className="waiting-icon">🕐</div>
           <div className="waiting-title">검토 중입니다</div>
           <p className="waiting-desc">
-            학생증 사진이 제출되었습니다.<br />
+            재학증명서가 제출되었습니다.<br />
             관리자 검토 후 투표 권한이 부여됩니다.<br />
             승인까지 잠시 기다려주세요.
           </p>

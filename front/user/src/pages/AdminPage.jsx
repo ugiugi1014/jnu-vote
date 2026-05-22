@@ -338,7 +338,7 @@ function VerificationFileModal({ request, token, onClose, onDecision }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(event) => event.stopPropagation()}>
-        <h3>학생증 확인</h3>
+        <h3>재학증명서 확인</h3>
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "#111", marginBottom: 4 }}>{request.email}</div>
           <div style={{ fontSize: 13, color: "#888" }}>학번: {request.student_id}</div>
@@ -350,7 +350,7 @@ function VerificationFileModal({ request, token, onClose, onDecision }) {
             </object>
           )}
           {fileUrl && !fileType.includes("pdf") && (
-            <img src={fileUrl} alt="학생증" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            <img src={fileUrl} alt="재학증명서" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
           )}
           {!fileUrl && (error || "파일 불러오는 중...")}
         </div>
@@ -662,7 +662,7 @@ function VoterSection({ token }) {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
-      setMessage(status === "approved" ? "학생 인증을 승인했습니다." : "학생 인증을 거절했습니다.");
+      setMessage(status === "approved" ? "재학증명서 인증을 승인했습니다." : "재학증명서 인증을 거절했습니다.");
       setPhotoTarget(null);
       await loadVerifications(tab);
       await loadVoters(selectedElectionId);
@@ -702,7 +702,7 @@ function VoterSection({ token }) {
     <>
       <div className="admin-page-header">
         <h2>유권자 관리</h2>
-        <p>학생 인증 요청을 승인/거절하고 선거별 토큰 발급 및 유권자 상태를 확인합니다.</p>
+        <p>재학증명서 인증 요청을 승인/거절하고 선거별 토큰 발급 및 유권자 상태를 확인합니다.</p>
       </div>
 
       <div className="inner-tab-bar">

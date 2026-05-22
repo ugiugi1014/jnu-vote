@@ -83,7 +83,7 @@ WHERE uv.status = 'approved'
 ## 데이터 관계
 
 ```
-user_verifications   ← 학생증 인증 (계정 단위, 한 번 approved 되면 재사용)
+user_verifications   ← 재학증명서 인증 (계정 단위, 한 번 approved 되면 재사용)
 user_secrets         ← serverSecret + wallet_address (계정 단위, 최초 등록 후 변경 불가)
 voters               ← 선거별 토큰 발급 + 투표 기록 (선거 단위)
 ```

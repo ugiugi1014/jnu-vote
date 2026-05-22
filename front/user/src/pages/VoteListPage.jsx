@@ -110,7 +110,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
                     </button>
                     {!isApproved && (
                       <span style={{ fontSize: 11, color: "#aaa" }}>
-                        {userStatus === "pending" ? "학생증 검토 중입니다" : "학생증 인증이 필요합니다"}
+                        {userStatus === "pending" ? "재학증명서 검토 중입니다" : "재학증명서 인증이 필요합니다"}
                       </span>
                     )}
                   </div>

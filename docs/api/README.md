@@ -70,7 +70,7 @@ Authorization: Bearer <JWT>
 | 인증 + 지갑 | [auth.md](./auth.md) — send-code, verify-code, /auth/wallet, /auth/me |
 | 선거 + 후보자 | [elections.md](./elections.md) — CRUD, 컨트랙트 등록, 시작/종료, 코디네이터 키 |
 | 유권자 + 토큰 | [voters.md](./voters.md) — 토큰 일괄 발행 |
-| 학생증 인증 | [verification.md](./verification.md) — 제출, 심사, 파일 스트림 |
+| 재학증명서 인증 | [verification.md](./verification.md) — 제출, 심사, 파일 스트림 |
 | 투표 | [vote.md](./vote.md) — 투표 확인 |
 | 개표 | [tally.md](./tally.md) — 수동/자동 개표 |
 
@@ -82,7 +82,7 @@ Authorization: Bearer <JWT>
   POST /auth/verify-code           코드 검증 → JWT + serverSecret 발급
   (프론트) KDF(웹메일+serverSecret) → 지갑 생성
   POST /auth/wallet                지갑 주소 백엔드 등록
-  POST /verification/request       학생증 사진 제출
+  POST /verification/request       재학증명서 파일 + 문서번호 제출
   ⏳ 관리자 승인 대기
   PATCH /verification/admin/:id    관리자 승인 → status: approved
   POST /elections/:id/tokens/issue 관리자 토큰 일괄 발행

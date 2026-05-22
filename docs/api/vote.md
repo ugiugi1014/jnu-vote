@@ -47,7 +47,7 @@
 - `election.contract_address` 등록됨
 - 해당 사용자 = `voters` 에 등록됨 + `has_voted=FALSE`
 - `voters.wallet_address` 있음
-- 학생증 `approved`
+- 재학증명서 인증 `approved`
 - `token_issued_at` 있음 (= 토큰 발급됨)
 
 **검증**:
@@ -70,7 +70,7 @@
 | 400 | election_id / txHash / voter_public_key 필수값 누락 |
 | 400 | 선거 상태 active 아님 |
 | 400 | contract_address 미등록 |
-| 400 | 지갑 미등록 / 학생증 미승인 / 토큰 미발급 / 이미 투표 |
+| 400 | 지갑 미등록 / 재학증명서 미승인 / 토큰 미발급 / 이미 투표 |
 | 400 | 트랜잭션 미포함 / 실패 / 다른 컨트랙트 / 다른 지갑 |
 | 401 | 토큰 없음 |
 | 404 | 선거 없음 / 유권자 등록 안됨 |
