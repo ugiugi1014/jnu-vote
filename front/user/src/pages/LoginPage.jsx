@@ -29,11 +29,15 @@ export default function LoginPage({ onLogin }) {
 
     if (import.meta.env.DEV) {
       if (normalizedEmail === "admin") {
-        onLogin({ email: "admin", role: "admin", token: null, wallet: null, verification: { status: "approved" } });
+        onLogin({ email: "admin", role: "admin", token: null,
+          wallet: await createWallet("admin", "mock-secret"),
+          verification: { status: "approved" } });
         return;
       }
       if (["user", "user1"].includes(normalizedEmail)) {
-        onLogin({ email: normalizedEmail, role: "user", token: null, wallet: null, verification: { status: "approved" } });
+        onLogin({ email: normalizedEmail, role: "user", token: null,
+          wallet: await createWallet(normalizedEmail, "mock-secret"),
+          verification: { status: "approved" } });
         return;
       }
     }
