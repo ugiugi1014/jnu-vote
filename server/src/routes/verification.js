@@ -24,6 +24,10 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+function normalizeDocNo(docNo) {
+  return String(docNo || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+}
+
 function adminOnly(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ message: "로그인 필요" });
@@ -59,16 +63,27 @@ router.post("/request", auth, upload.single("file"), async (req, res) => {
   try {
     const email = req.user.email;
     const { doc_no, student_id } = req.body;
+    const normalizedDocNo = normalizeDocNo(doc_no);
+    const filePath = req.file ? path.relative(process.cwd(), req.file.path) : null;
 
     if (!student_id) {
+      if (filePath) removeUploadedFile(filePath);
       return res.status(400).json({ message: "student_id 필수" });
     }
 
-    if (!doc_no || doc_no.length !== 16 || !/^[a-zA-Z0-9]+$/.test(doc_no)) {
+    if (normalizedDocNo.length !== 16) {
+      if (filePath) removeUploadedFile(filePath);
       return res.status(400).json({ message: "문서번호 형식이 올바르지 않습니다." });
     }
 
-    const filePath = req.file ? path.relative(process.cwd(), req.file.path) : null;
+    const [docRows] = await db.query(
+      "SELECT email FROM user_verifications WHERE doc_no = ? AND email <> ? LIMIT 1",
+      [normalizedDocNo, email]
+    );
+    if (docRows.length > 0) {
+      if (filePath) removeUploadedFile(filePath);
+      return res.status(409).json({ message: "이미 다른 계정에서 사용된 재학증명서 문서번호입니다." });
+    }
 
     // KICA 진위확인
     let autoApproved = false;
@@ -81,12 +96,13 @@ router.post("/request", auth, upload.single("file"), async (req, res) => {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Referer': 'https://unc.doculink.co.kr/',
           },
-          body: new URLSearchParams({ DOC_NO: doc_no, GUBUN: 'null' }),
+          body: new URLSearchParams({ DOC_NO: normalizedDocNo, GUBUN: 'null' }),
         }
       );
       const kicaData = await kicaRes.json();
 
       if (kicaData.SUCC != "Y") {
+        if (filePath) removeUploadedFile(filePath);
         return res.status(400).json({ message: "유효하지 않은 재학증명서입니다. 문서번호를 다시 확인해주세요." });
       }
 
@@ -98,21 +114,38 @@ router.post("/request", auth, upload.single("file"), async (req, res) => {
 
     const status = autoApproved ? "approved" : "pending";
 
-    await db.query(
-      `INSERT INTO user_verifications (email, student_id, file_path, status)
-      VALUES (?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        student_id = VALUES(student_id),
-        file_path = COALESCE(VALUES(file_path), file_path),
-        status = VALUES(status),
-        note = NULL,
-        reviewed_at = ${autoApproved ? "NOW()" : "NULL"}`,
-      [email, student_id, filePath, status]
+    const [ownRows] = await db.query(
+      "SELECT id FROM user_verifications WHERE email = ? LIMIT 1",
+      [email]
     );
+
+    if (ownRows.length > 0) {
+      await db.query(
+        `UPDATE user_verifications
+         SET student_id = ?,
+             doc_no = ?,
+             file_path = COALESCE(?, file_path),
+             status = ?,
+             note = NULL,
+             reviewed_at = ${autoApproved ? "NOW()" : "NULL"}
+         WHERE email = ?`,
+        [student_id, normalizedDocNo, filePath, status, email]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO user_verifications (email, student_id, doc_no, file_path, status, reviewed_at)
+         VALUES (?, ?, ?, ?, ?, ${autoApproved ? "NOW()" : "NULL"})`,
+        [email, student_id, normalizedDocNo, filePath, status]
+      );
+    }
 
     res.json({ message: "인증 신청 완료", status });
   } catch (err) {
     console.error(err);
+    if (req.file) removeUploadedFile(path.relative(process.cwd(), req.file.path));
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ message: "이미 다른 계정에서 사용된 재학증명서 문서번호입니다." });
+    }
     res.status(500).json({ message: "서버 오류" });
   }
 });
@@ -121,7 +154,7 @@ router.post("/request", auth, upload.single("file"), async (req, res) => {
 router.get("/me", auth, async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT email, student_id, file_path, status, note, created_at, reviewed_at
+      `SELECT email, student_id, doc_no, file_path, status, note, created_at, reviewed_at
        FROM user_verifications
        WHERE email = ?`,
       [req.user.email]
@@ -151,7 +184,7 @@ router.get("/admin", auth, adminOnly, async (req, res) => {
     }
 
     const [rows] = await db.query(
-      `SELECT id, email, student_id, file_path, status, note, created_at, reviewed_at
+      `SELECT id, email, student_id, doc_no, file_path, status, note, created_at, reviewed_at
        FROM user_verifications
        ${where}
        ORDER BY created_at DESC`,

@@ -1,6 +1,6 @@
-# 학생증 인증 API
+# 재학증명서 인증 API
 
-학생증 인증은 **계정 단위**(`user_verifications`)로 한 번만 통과하면 모든 선거에 재사용됨.
+재학증명서 인증은 **계정 단위**(`user_verifications`)로 한 번만 통과하면 모든 선거에 재사용됨.
 
 ## 상태 흐름
 
@@ -13,13 +13,14 @@ none → pending → approved / rejected
 
 ## `POST /verification/request`
 
-학생증 사진 + 학번 제출.
+재학증명서 파일 + 학번 + 진위확인 문서번호 제출.
 
 **권한**: auth  
 **Content-Type**: `multipart/form-data`
 
 **필드**:
 - `student_id` (text, 필수)
+- `doc_no` (text, 필수, 재학증명서 진위확인 문서번호 16자리)
 - `file` (image/pdf, 5MB 이하)
 
 **파일 저장**: `server/uploads/verifications/<email>_<timestamp>.<ext>`
@@ -28,7 +29,7 @@ none → pending → approved / rejected
 ```json
 {
   "message": "인증 신청 완료",
-  "status": "pending",
+  "status": "approved 또는 pending",
   "file_path": "uploads/verifications/20210001_stu_jejunu_ac_kr_1700000000.jpg"
 }
 ```
@@ -36,11 +37,15 @@ none → pending → approved / rejected
 **제약**:
 - 같은 사용자가 다시 제출하면 기존 row UPDATE (`status='pending'`, `note=NULL`, 새 file_path 적용)
 - 거절(`rejected`) 상태에서도 재제출 가능
+- `doc_no`는 KICA 진위확인에 사용하고 DB에 저장
+- 다른 계정에서 이미 사용한 `doc_no`는 재사용 불가
 
 **에러**:
 | 코드 | 사유 |
 |---|---|
 | 400 | `student_id` 필수 |
+| 400 | `doc_no` 형식 오류 또는 KICA 진위확인 실패 |
+| 409 | 다른 계정에서 이미 사용한 `doc_no` |
 | 401 | 토큰 없음/만료 |
 | 500 | 파일 저장/DB 오류 |
 
@@ -62,6 +67,7 @@ none → pending → approved / rejected
 {
   "email": "20210001@stu.jejunu.ac.kr",
   "student_id": "20210001",
+  "doc_no": "ABCD1234EFGH5678",
   "file_path": "uploads/... 또는 null",
   "status": "pending|approved|rejected",
   "note": "거절 사유 또는 null",
@@ -88,6 +94,7 @@ none → pending → approved / rejected
     "id": 1,
     "email": "20210001@stu.jejunu.ac.kr",
     "student_id": "20210001",
+    "doc_no": "ABCD1234EFGH5678",
     "file_path": "uploads/... 또는 null",
     "status": "pending",
     "note": null,

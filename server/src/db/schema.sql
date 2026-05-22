@@ -59,6 +59,7 @@ CREATE TABLE user_verifications (
   id          INT PRIMARY KEY AUTO_INCREMENT,
   email       VARCHAR(100) UNIQUE NOT NULL,
   student_id  VARCHAR(20)  NOT NULL,
+  doc_no      VARCHAR(16) UNIQUE,
   file_path   VARCHAR(255),
   status      ENUM('none', 'pending', 'approved', 'rejected') DEFAULT 'pending',
   note        TEXT,
