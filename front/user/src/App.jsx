@@ -118,7 +118,7 @@ export default function App() {
   const handleBack = () => setPage("list");
 
   const handleUploadSubmit = async (file, studentId, docNo) => {
-    if (!file || !token) return;
+    //if (!file || !token) return;
 
     const formData = new FormData();
     formData.append("student_id", studentId);

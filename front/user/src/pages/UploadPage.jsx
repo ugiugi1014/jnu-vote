@@ -52,42 +52,48 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
       const base64 = e.target.result.split(",")[1];
 
       try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  {
-                    text: `이 재학증명서 이미지에서 다음 정보만 JSON으로 추출해줘. 다른 말 없이 JSON만 반환해.
-  {
-    "doc_no": "좌측 상단 진위확인 문서번호 16자리 영숫자 (하이픈 제거)",
-    "student_id": "학번",
-    "name": "이름"
-  }`
-                  },
-                  {
-                    inline_data: {
-                      mime_type: f.type,
-                      data: base64,
-                    }
-                  }
-                ]
-              }]
-            }),
-          }
-        );
+        const provider = import.meta.env.VITE_OCR_PROVIDER || "ollama";
+        let text = "";
 
-        if (!res.ok) {
-          const errText = await res.text();
-          console.error("Gemini API 오류:", res.status, errText);
-          return;
+        if (provider === "gemini") {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${import.meta.env.VITE_GEMINI_MODEL || "gemini-2.0-flash"}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: `이 재학증명서 이미지에서 다음 정보만 JSON으로 추출해줘. 다른 말 없이 JSON만 반환해.\n{\n  "doc_no": "좌측 상단 진위확인 문서번호 16자리 영숫자 (하이픈 제거)",\n  "student_id": "학번",\n  "name": "이름"\n}` },
+                    { inline_data: { mime_type: f.type, data: base64 } }
+                  ]
+                }]
+              }),
+            }
+          );
+          if (!res.ok) { console.error("Gemini 오류:", res.status, await res.text()); return; }
+          const data = await res.json();
+          text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+        } else {
+          const res = await fetch(
+            `${import.meta.env.VITE_OLLAMA_HOST}/api/generate?ngrok-skip-browser-warning=true`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: import.meta.env.VITE_OLLAMA_MODEL,
+                prompt: `이 재학증명서 이미지에서 다음 정보만 JSON으로 추출해줘. 다른 말 없이 JSON만 반환해.\n{\n  "doc_no": "좌측 상단 진위확인 문서확인번호 16자리 영숫자 (하이픈 제거)",\n  "student_id": "학번",\n  "name": "이름"\n}`,
+                images: [base64],
+                stream: false,
+              }),
+            }
+          );
+          if (!res.ok) { console.error("Ollama 오류:", res.status, await res.text()); return; }
+          const data = await res.json();
+          text = data.response || "";
         }
 
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const clean = text.replace(/```json|```/g, "").trim();
         const parsed = JSON.parse(clean);
 
@@ -122,49 +128,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
           <p className="upload-card-desc">
             투표 참여를 위해 재학증명서 파일을 업로드해주세요.
           </p>
-
-          <div className="upload-field">
-            <label className="upload-label">학번</label>
-            <input
-              className="upload-input"
-              value={verificationStudentId}
-              placeholder="재학증명서에 표시된 학번"
-              onChange={(e) => {
-                setVerificationStudentId(e.target.value);
-                setError("");
-              }}
-            />
-          </div>
-
-          <div className="upload-field">
-            <label className="upload-label">재학증명서 문서번호</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {[
-                [docNo1, setDocNo1],
-                [docNo2, setDocNo2],
-                [docNo3, setDocNo3],
-                [docNo4, setDocNo4],
-              ].map(([val, setter], i) => (
-                <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input
-                    className="upload-input"
-                    value={val}
-                    maxLength={4}
-                    placeholder="XXXX"
-                    style={{ width: 72, textAlign: "center", letterSpacing: 2 }}
-                    onChange={e => {
-                      setter(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase());
-                      setError("");
-                    }}
-                  />
-                  {i < 3 && <span style={{ color: "#aaa" }}>-</span>}
-                </span>
-              ))}
-            </div>
-            <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-              증명서 좌측 상단의 진위확인 문서번호를 입력하세요
-            </p>
-          </div>
+          
           {/* 미리보기 or 드롭존 */}
           {preview ? (
             <div className="upload-preview">
@@ -204,6 +168,53 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
             >
               다시 선택
             </button>
+          )}
+
+          {file && (
+            <>
+              <div className="upload-field">
+                <label className="upload-label">학번</label>
+                <input
+                  className="upload-input"
+                  value={verificationStudentId}
+                  placeholder="재학증명서에 표시된 학번"
+                  onChange={(e) => {
+                    setVerificationStudentId(e.target.value);
+                    setError("");
+                  }}
+                />
+              </div>
+
+              <div className="upload-field">
+                <label className="upload-label">재학증명서 문서번호</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {[
+                    [docNo1, setDocNo1],
+                    [docNo2, setDocNo2],
+                    [docNo3, setDocNo3],
+                    [docNo4, setDocNo4],
+                  ].map(([val, setter], i) => (
+                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input
+                        className="upload-input"
+                        value={val}
+                        maxLength={4}
+                        placeholder="XXXX"
+                        style={{ width: 72, textAlign: "center", letterSpacing: 2 }}
+                        onChange={e => {
+                          setter(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase());
+                          setError("");
+                        }}
+                      />
+                      {i < 3 && <span style={{ color: "#aaa" }}>-</span>}
+                    </span>
+                  ))}
+                </div>
+                <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                  증명서 좌측 상단의 진위확인 문서번호를 입력하세요
+                </p>
+              </div>
+            </>
           )}
 
           <div className="upload-notice">
