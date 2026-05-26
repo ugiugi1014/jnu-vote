@@ -36,7 +36,7 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
   const [docNo3, setDocNo3] = useState("");
   const [docNo4, setDocNo4] = useState("");
 
-  const handleFile = (f) => {
+  const handleFile = async (f) => {
     if (!f) return;
     setFile(f);
     setError("");
@@ -47,7 +47,63 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => setPreview(e.target.result);
+    reader.onload = async (e) => {
+      setPreview(e.target.result);
+      const base64 = e.target.result.split(",")[1];
+
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  {
+                    text: `이 재학증명서 이미지에서 다음 정보만 JSON으로 추출해줘. 다른 말 없이 JSON만 반환해.
+  {
+    "doc_no": "좌측 상단 진위확인 문서번호 16자리 영숫자 (하이픈 제거)",
+    "student_id": "학번",
+    "name": "이름"
+  }`
+                  },
+                  {
+                    inline_data: {
+                      mime_type: f.type,
+                      data: base64,
+                    }
+                  }
+                ]
+              }]
+            }),
+          }
+        );
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error("Gemini API 오류:", res.status, errText);
+          return;
+        }
+
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const clean = text.replace(/```json|```/g, "").trim();
+        const parsed = JSON.parse(clean);
+
+        if (parsed.doc_no?.length === 16) {
+          setDocNo1(parsed.doc_no.slice(0, 4).toUpperCase());
+          setDocNo2(parsed.doc_no.slice(4, 8).toUpperCase());
+          setDocNo3(parsed.doc_no.slice(8, 12).toUpperCase());
+          setDocNo4(parsed.doc_no.slice(12, 16).toUpperCase());
+        }
+        if (parsed.student_id) setVerificationStudentId(parsed.student_id);
+
+      } catch (err) {
+        console.error("OCR 실패:", err);
+        // 실패해도 유저가 수동 입력하면 되니까 에러 표시 안 함
+      }
+    };
     reader.readAsDataURL(f);
   };
 
