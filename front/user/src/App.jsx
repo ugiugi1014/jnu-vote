@@ -15,7 +15,7 @@ function normalizeVerificationStatus(verification) {
 }
 
 export default function App() {
-  const [page, setPage] = useState("upload");
+  const [page, setPage] = useState("login");
   const [studentId, setStudentId] = useState("");
   const [role, setRole] = useState("user");
   const [token, setToken] = useState(null);
@@ -26,7 +26,7 @@ export default function App() {
   // 앱 첫 로드 시 (새로고침 복원)
   useEffect(() => {
     const stored = sessionStorage.getItem(AUTH_STORAGE_KEY);
-    if (!stored) { setPage("upload"); return; }
+    if (!stored) { setPage("login"); return; }
 
     const parsed = JSON.parse(stored);
     setToken(parsed.token);

@@ -6,18 +6,19 @@ const LOGO = "/src/jejun.png";
 function Header({ studentId, onLogout }) {
   return (
     <header className="header">
-      <div className="header-left">
+      <div className="header-inner">
         <img src={LOGO} alt="제주대학교 로고" className="header-logo-img" />
         <div className="header-title-group">
           <span className="header-title">제주대학교 전자투표</span>
           <span className="header-subtitle">Jeju National University E-Voting</span>
         </div>
-      </div>
-      <div className="header-right">
-        <div className="header-user">
-          <span>👤</span><span>{studentId}</span>
+        <div style={{ flex: 1 }} />
+        <div className="header-right">
+          <div className="header-user">
+            <span>👤</span><span>{studentId}</span>
+          </div>
+          <button className="logout-button" onClick={onLogout}>로그아웃</button>
         </div>
-        <button className="logout-button" onClick={onLogout}>로그아웃</button>
       </div>
     </header>
   );
