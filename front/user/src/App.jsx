@@ -85,6 +85,7 @@ export default function App() {
     setStudentId(profile.email);
     setRole(profile.role || "user");
     setUserStatus(normalizeVerificationStatus(profile.verification));
+    setPage(profile.role === "admin" ? "admin" : "list");
 
     sessionStorage.setItem(
       AUTH_STORAGE_KEY,

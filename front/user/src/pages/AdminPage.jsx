@@ -491,10 +491,24 @@ function AgendaSection({ token }) {
             candidate_index: candidate.candidate_index,
           }));
 
-        await api(`/elections/${editTarget.id}/candidates/bulk`, {
-          method: "PUT",
-          body: JSON.stringify({ candidates }),
-        });
+        // 기존 후보 전부 삭제
+        for (const candidate of editTarget.candidates) {
+          await api(`/elections/${editTarget.id}/candidates/${candidate.id}`, {
+            method: "DELETE",
+          });
+        }
+
+        // 새 후보 등록
+        for (const candidate of candidates) {
+          await api(`/elections/${editTarget.id}/candidates`, {
+            method: "POST",
+            body: JSON.stringify({
+              name: candidate.name,
+              description: candidate.description,
+              candidate_index: candidate.candidate_index,
+            }),
+          });
+        }
       }
 
       setMessage("선거 정보를 수정했습니다.");
