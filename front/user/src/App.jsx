@@ -161,8 +161,6 @@ export default function App() {
           onSubmit={handleUploadSubmit}
           onRefresh={handleRefresh}
           isPending={userStatus === "pending"}
-          token={token}
-          authHeaders={authHeaders}
         />
       )}
       {page === "list" && (

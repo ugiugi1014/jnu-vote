@@ -34,10 +34,16 @@ export default function LoginPage({ onLogin }) {
           verification: { status: "approved" } });
         return;
       }
-      if (["user", "user1"].includes(normalizedEmail)) {
+      if (normalizedEmail === "user") {
         onLogin({ email: normalizedEmail, role: "user", token: null,
           wallet: await createWallet(normalizedEmail, "mock-secret"),
           verification: { status: "approved" } });
+        return;
+      }
+      if (normalizedEmail === "user1") {
+        onLogin({ email: normalizedEmail, role: "user", token: null,
+          wallet: await createWallet(normalizedEmail, "mock-secret"),
+          verification: { status: "none" } });
         return;
       }
     }
