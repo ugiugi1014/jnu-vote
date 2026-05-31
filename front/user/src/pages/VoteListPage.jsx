@@ -31,7 +31,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
     fetch(`${BASE_URL}/elections`)
       .then(r => r.json())
       .then(data =>{
-        if (!cancelled) setVotes((data || []).filter(v => v.status === activeTab))
+        if (!cancelled) setVotes((data || []).filter(v => v.status === activeTab || (activeTab === "closed" && v.status === "tallied")))
       });
     return () => { cancelled = true; };
   }, [activeTab]);
@@ -91,6 +91,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
                 {vote.status === "active" && <span className="badge badge-active">진행중</span>}
                 {vote.status === "closed"  && <span className="badge badge-ended">종료</span>}
                 {vote.voted              && <span className="badge badge-voted">투표 완료</span>}
+                {vote.status === "tallied" && <span className="badge badge-approved">개표완료</span>}
               </div>
               <div className="vote-card-title">{vote.title}</div>
               <div className="vote-card-desc">{vote.description}</div>
@@ -115,7 +116,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
                     )}
                   </div>
                 )}
-                {vote.status === "closed" &&
+                {vote.status === "tallied" &&
                   <button className="vote-button vote-button-outline" onClick={() => onResult(vote)}>결과 보기</button>}
               </div>
             </div>
