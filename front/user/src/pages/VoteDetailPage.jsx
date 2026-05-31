@@ -4,13 +4,16 @@ import { generateECDHKeyPair, deriveSharedKeyAndDispose, importCoordPublicKey, e
 import { privateKeyToBigInt } from '../services/walletService';
 import { generateSecret, generateVoteProof } from '../services/zkpService';
 import { encryptCandidate } from '../services/poseidonService';
+import { castVote } from '../services/walletService';
+import { ethers } from 'ethers';
+import VotingSystemABI from '../abi/VotingSystem.json';
 //import { CANDIDATES } from "../data/mockData"; //후보자 목록 mock 데이터
 import "../styles/VoteDetailPage.css";
 
 const LOGO = "/src/jejun.png";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-export default function VoteDetailPage({ vote, onBack, wallet }) {
+export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   const [selected, setSelected] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showDonePopup, setShowDonePopup] = useState(false);
@@ -47,16 +50,38 @@ export default function VoteDetailPage({ vote, onBack, wallet }) {
       const secret = await generateSecret(walletPrivateKeyBigInt, vote.id);
       //투표 유효성 검사
       const { proof, nullifier } = await generateVoteProof(secret, selected, maxCandidate);
-      // TODO: castVote(connectedWallet, contractAddress, abi, nullifier, proof, ciphertext) 연결
+      // 부호화된 문장과 nonce 받기
       const { ciphertext, nonce } = await encryptCandidate(selected, sharedKeyBigInt);
+      // nullifier BigInt → bytes32
+      const nullifierBytes32 = ethers.zeroPadValue(
+        ethers.toBeHex(BigInt(nullifier)), 32
+      );
+      // ciphertext + nonce → bytes (ABI encode)
+      const encryptedData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ['uint256', 'uint256'],
+        [BigInt(ciphertext), BigInt(nonce)]
+      );
+      // voterPublicKey JWK → bytes
+      const voterPubKeyBytes = ethers.toUtf8Bytes(JSON.stringify(voterPublicKey));
+      // castVote 호출
+      const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPC_URL);
+      const connectedWallet = wallet.connect(provider);
+      const tx = await castVote(connectedWallet, vote.contract_address, VotingSystemABI, nullifierBytes32, encryptedData, voterPubKeyBytes);
 
-      console.log("공유키:", sharedKey);
-      console.log("투표자 공개키:", voterPublicKey);
-      // 다음: Poseidon 암호화 → snarkjs proof → 체인 제출
+      await fetch(`${BASE_URL}/vote/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          election_id: vote.id,
+          txHash: tx.hash,
+          voter_public_key: JSON.stringify(voterPublicKey),
+        }),
+      });
+
       setShowModal(false);
       setShowDonePopup(true);
     } catch (err){
-
+      alert("투표 처리 중 오류가 발생했습니다: " + err.message);
     }
   };
 
