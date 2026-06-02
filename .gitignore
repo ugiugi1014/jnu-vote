@@ -163,6 +163,8 @@ ignition/deployments/chain-31337
 zkp/build/
 *.ptau
 *.sym
+zkp/keys/*.zkey
+zkp/build/generate_witness.js
 
 # OS
 .DS_Store
@@ -172,3 +174,4 @@ Thumbs.db
 server/node_modules
 server/.env
 server/uploads/
+
