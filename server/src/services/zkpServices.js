@@ -9,6 +9,12 @@ function toCircuitValue(value, fieldName) {
   return BigInt(value).toString();
 }
 
+function firstExistingPath(candidates, label) {
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  if (found) return found;
+  throw new Error(`${label} 파일 없음. 확인 경로: ${candidates.join(" | ")}`);
+}
+
 /**
  * circuits/tally.circom 입력 형식 생성
  * {
@@ -91,17 +97,28 @@ function assertFileExists(filePath, label) {
  * - SNARKJS_BIN
  */
 function runCircomProof(inputJson) {
-  const buildDir = process.env.ZKP_BUILD_DIR || path.join(process.cwd(), "zkp", "build");
+  const projectZkpDir = path.resolve(__dirname, "..", "..", "..", "zkp");
+  const buildDir = process.env.ZKP_BUILD_DIR || path.join(projectZkpDir, "build");
+  const keysDir = path.join(projectZkpDir, "keys");
 
   const inputPath = path.join(buildDir, "input.json");
   const witnessPath = path.join(buildDir, "witness.wtns");
   const proofPath = path.join(buildDir, "proof.json");
   const publicPath = path.join(buildDir, "public.json");
 
-  const wasmPath = process.env.TALLY_WASM_PATH || path.join(buildDir, "tally_js", "tally.wasm");
-  const witnessGenPath =
-    process.env.TALLY_WITNESS_GEN_PATH || path.join(buildDir, "tally_js", "generate_witness.js");
-  const zkeyPath = process.env.TALLY_ZKEY_PATH || path.join(buildDir, "tally.zkey");
+  const wasmPath = process.env.TALLY_WASM_PATH || firstExistingPath([
+    path.join(buildDir, "tally_js", "tally.wasm"),
+    path.join(buildDir, "tally.wasm"),
+  ], "tally.wasm");
+  const witnessGenPath = process.env.TALLY_WITNESS_GEN_PATH || firstExistingPath([
+    path.join(buildDir, "tally_js", "generate_witness.js"),
+    path.join(buildDir, "generate_witness.js"),
+  ], "generate_witness.js");
+  const zkeyPath = process.env.TALLY_ZKEY_PATH || firstExistingPath([
+    path.join(keysDir, "tally_final.zkey"),
+    path.join(buildDir, "tally_final.zkey"),
+    path.join(buildDir, "tally.zkey"),
+  ], "tally.zkey");
   const snarkjsBin = process.env.SNARKJS_BIN || "snarkjs";
 
   fs.mkdirSync(buildDir, { recursive: true });

@@ -6,6 +6,15 @@ const db = require("../db");
 const auth = require("../middleware/auth");
 const { scheduleElectionClose, clearElectionSchedule } = require("../services/electionScheduler");
 
+const ELECTION_FACTORY_ABI = [
+  "function createElection(uint256 electionId, address electionAdmin) external returns (address votingSystem, address votingToken)",
+  "event ElectionCreated(uint256 indexed electionId, address votingSystem, address votingToken)",
+];
+
+const VOTING_TOKEN_ABI = [
+  "function issueTokenBatch(address[] calldata recipients) external",
+];
+
 // status 상수화
 const ELECTION_STATUS = {
   PENDING: "pending",
@@ -1073,15 +1082,15 @@ router.get("/:id/my-eligibility", auth, async (req, res) => {
       `SELECT v.id, v.token_issued_at, v.has_voted,
               us.wallet_address,
               COALESCE(uv.status, 'none') AS verification_status
-      FROM voters v
-      LEFT JOIN user_secrets us ON us.email = v.email
-      LEFT JOIN user_verifications uv ON uv.email = v.email
-      WHERE v.election_id = ? AND v.email = ?`,
+       FROM user_verifications uv
+       LEFT JOIN user_secrets us ON us.email = uv.email
+       LEFT JOIN voters v ON v.email = uv.email AND v.election_id = ?
+       WHERE uv.email = ?`,
       [electionId, email]
     );
 
     // voters에 아직 행이 없으면 (미로그인 상태에서 명단만 등록된 케이스) — wallet 없음으로 처리
-    const voter = voterRows[0] || null;
+    let voter = voterRows[0] || null;
 
     // 재학 인증 미완료
     if (!voter || voter.verification_status !== "approved") {
@@ -1091,6 +1100,27 @@ router.get("/:id/my-eligibility", auth, async (req, res) => {
     // 지갑 미등록
     if (!voter.wallet_address) {
       return res.json({ eligible: false, reason: "wallet_not_registered" });
+    }
+
+    if (!voter.id) {
+      await conn.query(
+        `INSERT INTO voters (election_id, email, student_id, wallet_address, verification_status, verified_at)
+         VALUES (?, ?, ?, ?, 'approved', NOW())
+         ON DUPLICATE KEY UPDATE
+           student_id = VALUES(student_id),
+           wallet_address = COALESCE(VALUES(wallet_address), wallet_address),
+           verification_status = 'approved',
+           verified_at = COALESCE(verified_at, NOW())`,
+        [electionId, email, listRows[0].student_id, voter.wallet_address]
+      );
+
+      const [createdRows] = await conn.query(
+        `SELECT id, token_issued_at, has_voted, ? AS wallet_address, 'approved' AS verification_status
+         FROM voters
+         WHERE election_id = ? AND email = ?`,
+        [voter.wallet_address, electionId, email]
+      );
+      voter = createdRows[0];
     }
 
     // 이미 투표함
@@ -1109,13 +1139,12 @@ router.get("/:id/my-eligibility", auth, async (req, res) => {
     }
 
     const { ethers } = require("ethers");
-    const VotingTokenABI = require("../abi/VotingToken.json");
 
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
     const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
     const tokenContract = new ethers.Contract(
       election.token_contract_address,
-      VotingTokenABI,
+      VOTING_TOKEN_ABI,
       adminWallet
     );
 
@@ -1162,13 +1191,12 @@ router.post("/:id/deploy", auth, adminOnly, async (req, res) => {
     }
 
     const { ethers } = require("ethers");
-    const ElectionFactoryABI = require("../abi/ElectionFactory.json");
 
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
     const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
     const factory = new ethers.Contract(
       process.env.FACTORY_ADDRESS,
-      ElectionFactoryABI,
+      ELECTION_FACTORY_ABI,
       adminWallet
     );
 
@@ -1176,7 +1204,7 @@ router.post("/:id/deploy", auth, adminOnly, async (req, res) => {
     const receipt = await tx.wait();
 
     // ElectionCreated 이벤트에서 주소 파싱
-    const iface = new ethers.Interface(ElectionFactoryABI);
+    const iface = new ethers.Interface(ELECTION_FACTORY_ABI);
     let votingSystemAddress, votingTokenAddress;
 
     for (const log of receipt.logs) {
@@ -1259,7 +1287,7 @@ router.post("/:id/voters/bulk", auth, adminOnly, async (req, res) => {
 
     // 3. 이미 가입+인증+지갑 있는 학번 선별 → 즉시 토큰 발급
     const [eligible] = await conn.query(
-      `SELECT us.wallet_address, v.id AS voter_id
+      `SELECT uv.email, esl.student_id, us.wallet_address, v.id AS voter_id
        FROM election_student_list esl
        JOIN user_verifications uv ON uv.student_id = esl.student_id
        JOIN user_secrets us ON us.email = uv.email
@@ -1273,17 +1301,16 @@ router.post("/:id/voters/bulk", auth, adminOnly, async (req, res) => {
     );
 
     let txHash = null;
-    const issuedCount = eligible.length;
+    let issuedCount = 0;
 
-    if (issuedCount > 0 && election.token_contract_address) {
+    if (eligible.length > 0 && election.token_contract_address) {
       const { ethers } = require("ethers");
-      const VotingTokenABI = require("../abi/VotingToken.json");
 
       const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
       const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
       const tokenContract = new ethers.Contract(
         election.token_contract_address,
-        VotingTokenABI,
+        VOTING_TOKEN_ABI,
         adminWallet
       );
 
@@ -1291,12 +1318,22 @@ router.post("/:id/voters/bulk", auth, adminOnly, async (req, res) => {
       const tx = await tokenContract.issueTokenBatch(walletAddresses);
       await tx.wait();
       txHash = tx.hash;
+      issuedCount = eligible.length;
 
-      const voterIds = eligible.filter(e => e.voter_id).map(e => e.voter_id);
-      if (voterIds.length > 0) {
+      for (const voter of eligible) {
         await conn.query(
-          `UPDATE voters SET token_issued_at = NOW() WHERE id IN (?)`,
-          [voterIds]
+          `INSERT INTO voters (
+             election_id, email, student_id, wallet_address,
+             verification_status, verified_at, token_issued_at
+           )
+           VALUES (?, ?, ?, ?, 'approved', NOW(), NOW())
+           ON DUPLICATE KEY UPDATE
+             student_id = VALUES(student_id),
+             wallet_address = COALESCE(VALUES(wallet_address), wallet_address),
+             verification_status = 'approved',
+             verified_at = COALESCE(verified_at, NOW()),
+             token_issued_at = COALESCE(token_issued_at, NOW())`,
+          [electionId, voter.email, voter.student_id, voter.wallet_address]
         );
       }
     }

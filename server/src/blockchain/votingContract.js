@@ -16,7 +16,7 @@ const votingSystemAbi = [
   "function getAllVotes() view returns (tuple(bytes encryptedData, bytes voterPublicKey)[])",
   "function getTotalVotes() view returns (uint256)",
   "function getVoteCount(uint256 candidateId) view returns (uint256)",
-  "function recordTally(uint256[] candidateIds, uint256[] voteCounts) external",
+  "function recordTally(uint256[] candidateIds, uint256[] voteCounts, uint[2] pA, uint[2][2] pB, uint[2] pC, uint[23] pubSignals) external",
 ];
 
 const votingTokenAbi = [

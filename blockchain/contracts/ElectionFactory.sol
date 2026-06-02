@@ -7,10 +7,10 @@ import "./VotingSystem.sol";
 import "./VotingToken.sol";
 
 contract ElectionFactory is Ownable {
-
     address public immutable votingSystemImpl;
     address public immutable votingTokenImpl;
     address public immutable voteVerifier;
+    address public immutable tallyVerifier;
 
     struct DeployedElection {
         address votingSystem;
@@ -28,42 +28,44 @@ contract ElectionFactory is Ownable {
     constructor(
         address _votingSystemImpl,
         address _votingTokenImpl,
-        address _voteVerifier
+        address _voteVerifier,
+        address _tallyVerifier
     ) Ownable(msg.sender) {
-        require(_votingSystemImpl != address(0), unicode"유효하지 않은 VotingSystem impl");
-        require(_votingTokenImpl != address(0), unicode"유효하지 않은 VotingToken impl");
-        require(_voteVerifier != address(0), unicode"유효하지 않은 verifier 주소");
+        require(_votingSystemImpl != address(0), "invalid VotingSystem implementation");
+        require(_votingTokenImpl != address(0), "invalid VotingToken implementation");
+        require(_voteVerifier != address(0), "invalid vote verifier");
+        require(_tallyVerifier != address(0), "invalid tally verifier");
+
         votingSystemImpl = _votingSystemImpl;
         votingTokenImpl = _votingTokenImpl;
         voteVerifier = _voteVerifier;
+        tallyVerifier = _tallyVerifier;
     }
 
     function createElection(
         uint256 electionId,
         address electionAdmin
     ) external onlyOwner returns (address votingSystem, address votingToken) {
-        require(electionAdmin != address(0), unicode"유효하지 않은 관리자 주소");
-        require(
-            elections[electionId].votingSystem == address(0),
-            unicode"이미 배포된 선거입니다."
-        );
+        require(electionAdmin != address(0), "invalid election admin");
+        require(elections[electionId].votingSystem == address(0), "election already deployed");
 
-        // 1. clone 생성
         votingToken = Clones.clone(votingTokenImpl);
         votingSystem = Clones.clone(votingSystemImpl);
 
-        // 2. initialize
         VotingToken(votingToken).initialize(address(this));
-        VotingSystem(votingSystem).initialize(votingToken, electionAdmin, address(this), voteVerifier);
+        VotingSystem(votingSystem).initialize(
+            votingToken,
+            electionAdmin,
+            address(this),
+            voteVerifier,
+            tallyVerifier
+        );
 
-        // 3. VotingToken에 VotingSystem 소각 권한 부여
         VotingToken(votingToken).setVotingSystem(votingSystem);
 
-        // 4. owner를 electionAdmin으로 이전
         VotingToken(votingToken).transferOwnership(electionAdmin);
         VotingSystem(votingSystem).transferOwnership(electionAdmin);
 
-        // 5. 매핑 기록
         elections[electionId] = DeployedElection(votingSystem, votingToken);
 
         emit ElectionCreated(electionId, votingSystem, votingToken);

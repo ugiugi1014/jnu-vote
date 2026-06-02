@@ -27,6 +27,25 @@ function tallyError(message, statusCode = 400) {
   return err;
 }
 
+function toSolidityProof(proof, publicSignals) {
+  if (!proof?.pi_a || !proof?.pi_b || !proof?.pi_c) {
+    throw new Error("tally proof 형식 오류");
+  }
+  if (!Array.isArray(publicSignals) || publicSignals.length !== 23) {
+    throw new Error("tally publicSignals는 23개여야 합니다.");
+  }
+
+  return {
+    pA: proof.pi_a.slice(0, 2).map(BigInt),
+    pB: [
+      [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
+      [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
+    ],
+    pC: proof.pi_c.slice(0, 2).map(BigInt),
+    pubSignals: publicSignals.map(BigInt),
+  };
+}
+
 async function performTally(electionId) {
   const conn = await db.getConnection();
 
@@ -177,8 +196,16 @@ async function performTally(electionId) {
     try {
       const candidateIds = candidateRows.map((c) => c.id);
       const voteCounts = candidateRows.map((c) => tally[c.candidate_index] || 0);
+      const solidityProof = toSolidityProof(proofResult.proof, proofResult.publicSignals);
 
-      const tx = await contract.recordTally(candidateIds, voteCounts);
+      const tx = await contract.recordTally(
+        candidateIds,
+        voteCounts,
+        solidityProof.pA,
+        solidityProof.pB,
+        solidityProof.pC,
+        solidityProof.pubSignals
+      );
       const receipt = await tx.wait();
       tallyTxHash = receipt?.hash || tx.hash;
     } catch (err) {

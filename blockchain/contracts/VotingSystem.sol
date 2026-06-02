@@ -14,10 +14,22 @@ interface IVoteVerifier {
     ) external view returns (bool);
 }
 
+interface ITallyVerifier {
+    function verifyProof(
+        uint[2] calldata a,
+        uint[2][2] calldata b,
+        uint[2] calldata c,
+        uint[23] calldata input
+    ) external view returns (bool);
+}
+
 contract VotingSystem is Initializable, OwnableUpgradeable {
+    uint256 private constant TALLY_MAX_VOTES = 10;
+    uint256 private constant TALLY_CANDIDATES = 3;
 
     VotingToken public votingToken;
     IVoteVerifier public voteVerifier;
+    ITallyVerifier public tallyVerifier;
 
     address public electionAdmin;
     bool public electionOpen;
@@ -28,8 +40,8 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         bytes encryptedData;
         bytes voterPublicKey;
     }
-    EncryptedVote[] public votes;
 
+    EncryptedVote[] public votes;
     mapping(uint256 => uint256) public tallyResult;
 
     event ElectionAdminSet(address indexed admin);
@@ -43,41 +55,44 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         _disableInitializers();
     }
 
-    IVoteVerifier public voteVerifier;
-
     function initialize(
         address _votingToken,
         address _electionAdmin,
         address _owner,
-        address _voteVerifier
+        address _voteVerifier,
+        address _tallyVerifier
     ) external initializer {
         __Ownable_init(_owner);
-        require(_votingToken != address(0), unicode"유효하지 않은 토큰 주소입니다.");
-        require(_electionAdmin != address(0), unicode"유효하지 않은 관리자 주소입니다.");
-        require(_voteVerifier != address(0), unicode"유효하지 않은 verifier 주소입니다.");
+        require(_votingToken != address(0), "invalid voting token");
+        require(_electionAdmin != address(0), "invalid election admin");
+        require(_voteVerifier != address(0), "invalid vote verifier");
+        require(_tallyVerifier != address(0), "invalid tally verifier");
+
         votingToken = VotingToken(_votingToken);
         electionAdmin = _electionAdmin;
         voteVerifier = IVoteVerifier(_voteVerifier);
+        tallyVerifier = ITallyVerifier(_tallyVerifier);
+
         emit ElectionAdminSet(_electionAdmin);
     }
 
     modifier onlyElectionAdmin() {
-        require(msg.sender == electionAdmin, unicode"선거 관리자만 실행할 수 있습니다.");
+        require(msg.sender == electionAdmin, "only election admin");
         _;
     }
 
     modifier whenElectionOpen() {
-        require(electionOpen, unicode"선거가 열려있지 않습니다.");
+        require(electionOpen, "election is not open");
         _;
     }
 
     modifier whenElectionClosed() {
-        require(!electionOpen, unicode"선거가 진행 중입니다.");
+        require(!electionOpen, "election is open");
         _;
     }
 
     function setElectionAdmin(address _electionAdmin) external onlyOwner {
-        require(_electionAdmin != address(0), unicode"유효하지 않은 주소입니다.");
+        require(_electionAdmin != address(0), "invalid election admin");
         electionAdmin = _electionAdmin;
         emit ElectionAdminSet(_electionAdmin);
     }
@@ -100,16 +115,12 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         uint[2][2] calldata _pB,
         uint[2] calldata _pC
     ) external whenElectionOpen {
-        require(votingToken.isTokenValid(msg.sender), unicode"투표 토큰이 없습니다.");
-        require(!nullifiers[nullifier], unicode"이미 투표하셨습니다.");
+        require(votingToken.isTokenValid(msg.sender), "voting token required");
+        require(!nullifiers[nullifier], "duplicate nullifier");
 
-        // ZKP 검증 — public signal은 nullifier
         uint[1] memory pubSignals;
         pubSignals[0] = uint256(nullifier);
-        require(
-            voteVerifier.verifyProof(_pA, _pB, _pC, pubSignals),
-            unicode"ZKP 검증 실패"
-        );
+        require(voteVerifier.verifyProof(_pA, _pB, _pC, pubSignals), "vote proof failed");
 
         nullifiers[nullifier] = true;
         votes.push(EncryptedVote({ encryptedData: encryptedData, voterPublicKey: voterPubKey }));
@@ -119,9 +130,33 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
 
     function recordTally(
         uint256[] calldata candidateIds,
-        uint256[] calldata voteCounts
+        uint256[] calldata voteCounts,
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[23] calldata _pubSignals
     ) external onlyElectionAdmin whenElectionClosed {
-        require(candidateIds.length == voteCounts.length, unicode"배열 길이가 일치하지 않습니다.");
+        require(candidateIds.length == voteCounts.length, "array length mismatch");
+        require(candidateIds.length == TALLY_CANDIDATES, "candidate count mismatch");
+        require(votes.length <= TALLY_MAX_VOTES, "vote count exceeds tally circuit");
+
+        for (uint256 i = 0; i < TALLY_MAX_VOTES; i++) {
+            if (i < votes.length) {
+                (uint256 ciphertext, uint256 nonce) = abi.decode(votes[i].encryptedData, (uint256, uint256));
+                require(_pubSignals[i] == nonce, "tally nonce mismatch");
+                require(_pubSignals[TALLY_MAX_VOTES + i] == ciphertext, "tally ciphertext mismatch");
+            } else {
+                require(_pubSignals[i] == 0, "invalid nonce padding");
+                require(_pubSignals[TALLY_MAX_VOTES + i] == 0, "invalid ciphertext padding");
+            }
+        }
+
+        for (uint256 i = 0; i < TALLY_CANDIDATES; i++) {
+            require(_pubSignals[20 + i] == voteCounts[i], "tally result mismatch");
+        }
+
+        require(tallyVerifier.verifyProof(_pA, _pB, _pC, _pubSignals), "tally proof failed");
+
         for (uint256 i = 0; i < candidateIds.length; i++) {
             tallyResult[candidateIds[i]] = voteCounts[i];
             emit TallyRecorded(candidateIds[i], voteCounts[i]);

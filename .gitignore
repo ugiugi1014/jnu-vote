@@ -147,6 +147,10 @@ vite.config.ts.timestamp-*
 /typechain-types
 /coverage
 /coverage.json
+blockchain/artifacts/
+blockchain/cache/
+blockchain/typechain/
+blockchain/typechain-types/
 ignition/deployments/chain-31337
 .vscode_hardhat_config_*.ts
 
