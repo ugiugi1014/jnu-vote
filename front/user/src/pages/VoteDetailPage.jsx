@@ -87,7 +87,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       // castVote 호출
       const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPC_URL);
       const connectedWallet = wallet.connect(provider);
-      const tx = await castVote(connectedWallet, vote.contract_address, VotingSystemABI, nullifierBytes32, encryptedData, voterPubKeyBytes);
+      const tx = await castVote(connectedWallet, vote.contract_address, VotingSystemABI, nullifierBytes32, encryptedData, voterPubKeyBytes, proof);
 
       await fetch(`${BASE_URL}/vote/confirm`, {
         method: 'POST',

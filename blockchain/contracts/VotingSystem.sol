@@ -5,19 +5,19 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./VotingToken.sol";
 
-// interface IVoteVerifier {
-//     function verifyProof(
-//         uint[2] calldata a,
-//         uint[2][2] calldata b,
-//         uint[2] calldata c,
-//         uint[1] calldata input
-//     ) external view returns (bool);
-// }
+interface IVoteVerifier {
+    function verifyProof(
+        uint[2] calldata a,
+        uint[2][2] calldata b,
+        uint[2] calldata c,
+        uint[1] calldata input
+    ) external view returns (bool);
+}
 
 contract VotingSystem is Initializable, OwnableUpgradeable {
 
     VotingToken public votingToken;
-    // IVoteVerifier public voteVerifier;
+    IVoteVerifier public voteVerifier;
 
     address public electionAdmin;
     bool public electionOpen;
@@ -43,16 +43,21 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         _disableInitializers();
     }
 
+    IVoteVerifier public voteVerifier;
+
     function initialize(
         address _votingToken,
         address _electionAdmin,
-        address _owner
+        address _owner,
+        address _voteVerifier
     ) external initializer {
         __Ownable_init(_owner);
         require(_votingToken != address(0), unicode"유효하지 않은 토큰 주소입니다.");
         require(_electionAdmin != address(0), unicode"유효하지 않은 관리자 주소입니다.");
+        require(_voteVerifier != address(0), unicode"유효하지 않은 verifier 주소입니다.");
         votingToken = VotingToken(_votingToken);
         electionAdmin = _electionAdmin;
+        voteVerifier = IVoteVerifier(_voteVerifier);
         emit ElectionAdminSet(_electionAdmin);
     }
 
@@ -90,21 +95,25 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
     function castVote(
         bytes32 nullifier,
         bytes calldata encryptedData,
-        bytes calldata voterPubKey
+        bytes calldata voterPubKey,
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC
     ) external whenElectionOpen {
-        require(
-            votingToken.isTokenValid(msg.sender),
-            unicode"투표 토큰이 없습니다. 유권자 등록을 확인하세요."
-        );
+        require(votingToken.isTokenValid(msg.sender), unicode"투표 토큰이 없습니다.");
         require(!nullifiers[nullifier], unicode"이미 투표하셨습니다.");
 
-        nullifiers[nullifier] = true;
-        votes.push(EncryptedVote({
-            encryptedData: encryptedData,
-            voterPublicKey: voterPubKey
-        }));
-        votingToken.burnToken(msg.sender);
+        // ZKP 검증 — public signal은 nullifier
+        uint[1] memory pubSignals;
+        pubSignals[0] = uint256(nullifier);
+        require(
+            voteVerifier.verifyProof(_pA, _pB, _pC, pubSignals),
+            unicode"ZKP 검증 실패"
+        );
 
+        nullifiers[nullifier] = true;
+        votes.push(EncryptedVote({ encryptedData: encryptedData, voterPublicKey: voterPubKey }));
+        votingToken.burnToken(msg.sender);
         emit VoteCast(nullifier);
     }
 

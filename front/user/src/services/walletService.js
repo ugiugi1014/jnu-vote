@@ -52,9 +52,16 @@ export async function getBalance(provider, address) {
 }
 
 // 컨트랙트 호출 (투표)
-export async function castVote(connectedWallet, contractAddress, abi, nullifier, encryptedData, voterPubKey) {
+export async function castVote(connectedWallet, contractAddress, abi, nullifier, encryptedData, voterPubKey, proof) {
   const contract = new ethers.Contract(contractAddress, abi, connectedWallet);
-  const tx = await contract.castVote(nullifier, encryptedData, voterPubKey);
+  const tx = await contract.castVote(
+    nullifier,
+    encryptedData,
+    voterPubKey,
+    proof.pi_a.slice(0, 2).map(BigInt),
+    [proof.pi_b[0].map(BigInt), proof.pi_b[1].map(BigInt)],
+    proof.pi_c.slice(0, 2).map(BigInt)
+  );
   await tx.wait();
   return tx;
 }
