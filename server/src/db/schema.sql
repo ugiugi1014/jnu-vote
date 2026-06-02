@@ -99,3 +99,13 @@ CREATE TABLE tally_results (
   FOREIGN KEY (election_id)  REFERENCES elections(id)  ON DELETE CASCADE,
   FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
 );
+
+-- 선거별 학번 명단 (토큰 발급 자격 기준)
+CREATE TABLE election_student_list (
+  id           INT PRIMARY KEY AUTO_INCREMENT,
+  election_id  INT         NOT NULL,
+  student_id   VARCHAR(20) NOT NULL,
+  created_at   DATETIME    DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_election_student (election_id, student_id)
+);

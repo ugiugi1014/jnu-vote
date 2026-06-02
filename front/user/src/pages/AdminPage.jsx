@@ -114,23 +114,21 @@ function ElectionFormModal({ mode, election, onClose, onSubmit }) {
   const isEdit = mode === "edit";
   const canEditCandidates = !isEdit || election?.status === "pending";
   const [form, setForm] = useState(() => ({
-    title: election?.title || "",
-    description: election?.description || "",
-    start_time: toDateTimeInput(election?.start_time),
-    end_time: toDateTimeInput(election?.end_time),
-    contract_address: election?.contract_address || "",
-    token_contract_address: election?.token_contract_address || "",
-    candidates: (election?.candidates || [{ name: "", dept: "", slogan: "" }]).map((candidate, index) => {
-      const parsed = parseCandidateDescription(candidate.description);
-      return {
-        id: candidate.id,
-        candidate_index: candidate.candidate_index ?? index,
-        name: candidate.name || "",
-        dept: candidate.dept || parsed.dept || "",
-        slogan: candidate.slogan || parsed.slogan || "",
-      };
-    }),
-  }));
+  title: election?.title || "",
+  description: election?.description || "",
+  start_time: toDateTimeInput(election?.start_time),
+  end_time: toDateTimeInput(election?.end_time),
+  candidates: (election?.candidates || [{ name: "", dept: "", slogan: "" }]).map((candidate, index) => {
+    const parsed = parseCandidateDescription(candidate.description);
+    return {
+      id: candidate.id,
+      candidate_index: candidate.candidate_index ?? index,
+      name: candidate.name || "",
+      dept: candidate.dept || parsed.dept || "",
+      slogan: candidate.slogan || parsed.slogan || "",
+    };
+  }),
+}));
 
   const updateField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const updateCandidate = (index, key, value) => {
@@ -202,20 +200,6 @@ function ElectionFormModal({ mode, election, onClose, onSubmit }) {
             <input className="form-input" type="datetime-local" value={form.end_time} onChange={(event) => updateField("end_time", event.target.value)} />
           </div>
         </div>
-
-        {isEdit && (
-          <>
-            <div className="candidate-section-label">컨트랙트 주소</div>
-            <div className="form-group">
-              <label className="form-label">VotingSystem 주소</label>
-              <input className="form-input" value={form.contract_address} placeholder="0x..." onChange={(event) => updateField("contract_address", event.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">VotingToken 주소</label>
-              <input className="form-input" value={form.token_contract_address} placeholder="0x..." onChange={(event) => updateField("token_contract_address", event.target.value)} />
-            </div>
-          </>
-        )}
 
         <div className="candidate-section-label">후보</div>
         {!canEditCandidates && (
@@ -380,7 +364,7 @@ function AgendaSection({ token }) {
   const [showCreate, setShowCreate] = useState(false);
 
   const selectedElection = elections.find((election) => String(election.id) === String(selectedElectionId));
-  const canIssueSelectedTokens = selectedElection?.status === "pending" && Boolean(selectedElection.token_contract_address);
+  const canIssueSelectedTokens = ["pending", "active"].includes(selectedElection?.status) && Boolean(selectedElection.token_contract_address);
 
   const loadElections = useCallback(async () => {
     setLoading(true);
@@ -471,16 +455,6 @@ function AgendaSection({ token }) {
           end_time: form.end_time,
         }),
       });
-
-      if (form.contract_address || form.token_contract_address) {
-        await api(`/elections/${editTarget.id}/contract`, {
-          method: "POST",
-          body: JSON.stringify({
-            contract_address: form.contract_address || undefined,
-            token_contract_address: form.token_contract_address || undefined,
-          }),
-        });
-      }
 
       if (editTarget.status === "pending") {
         const candidates = form.candidates
@@ -589,6 +563,14 @@ function AgendaSection({ token }) {
                 <td>
                   <button className="action-btn info" onClick={() => openInfo(election.id)}>상세</button>
                   <button className="action-btn" onClick={() => openEdit(election.id)}>수정</button>
+                  {election.status === "pending" && !election.contract_address && (
+                    <button
+                      className="action-btn info"
+                      onClick={() => runAction("컨트랙트 배포", () => api(`/elections/${election.id}/deploy`, { method: "POST" }))}
+                    >
+                      배포
+                    </button>
+                  )}
                   {election.status === "pending" && (
                     <button
                       className="action-btn info"
@@ -626,8 +608,10 @@ function VoterSection({ token }) {
   const [search, setSearch] = useState("");
   const [photoTarget, setPhotoTarget] = useState(null);
   const [message, setMessage] = useState("");
+  const [voterInput, setVoterInput] = useState("");
+  const [voterUploadMsg, setVoterUploadMsg] = useState("");
   const selectedElection = elections.find((election) => String(election.id) === String(selectedElectionId));
-  const canIssueSelectedTokens = selectedElection?.status === "pending" && Boolean(selectedElection.token_contract_address);
+  const canIssueSelectedTokens = ["pending", "active"].includes(selectedElection?.status) && Boolean(selectedElection.token_contract_address);
 
   const loadVerifications = useCallback(async (status) => {
     try {
@@ -694,6 +678,29 @@ function VoterSection({ token }) {
         body: JSON.stringify({}),
       });
       setMessage(`토큰 ${result.count || 0}건 발급 완료${result.txHash ? ` (${result.txHash.slice(0, 10)}...)` : ""}`);
+      await loadVoters(selectedElectionId);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const uploadVoters = async () => {
+    if (!selectedElectionId) return alert("선거를 선택하세요.");
+    const lines = voterInput
+      .split(/[\n,]/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return alert("학번을 입력하세요.");
+
+    try {
+      const result = await api(`/elections/${selectedElectionId}/voters/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ student_ids: lines }),
+      });
+      setVoterUploadMsg(
+        `등록 완료 — 총 ${result.total}명 / 즉시 발급 ${result.issued}명 / 보류 ${result.pending}명`
+      );
+      setVoterInput("");
       await loadVoters(selectedElectionId);
     } catch (err) {
       alert(err.message);
@@ -776,6 +783,25 @@ function VoterSection({ token }) {
         <h2>선거별 유권자</h2>
         <p>선택한 선거의 토큰 발급, 투표 여부, 지갑 등록 상태를 확인합니다.</p>
       </div>
+
+      <div className="toolbar" style={{ alignItems: "flex-start", gap: 8 }}>
+        <textarea
+          className="form-textarea"
+          style={{ flex: 1, minHeight: 80, resize: "vertical" }}
+          placeholder={"학번을 줄바꿈 또는 쉼표로 구분해 입력\n예) 20210001\n20210002, 20210003"}
+          value={voterInput}
+          onChange={e => setVoterInput(e.target.value)}
+        />
+        <button
+          className="action-btn info"
+          style={{ alignSelf: "flex-end" }}
+          onClick={uploadVoters}
+          disabled={!selectedElectionId || !voterInput.trim()}
+        >
+          명단 등록
+        </button>
+      </div>
+      {voterUploadMsg && <div className="lock-notice">{voterUploadMsg}</div>}
 
       <div className="table-wrap">
         <table>

@@ -1024,4 +1024,299 @@ router.get("/:id/result", async (req, res) => {
     res.status(500).json({ message: "서버 오류" });
   }
 });
+
+/*
+=====================================================
+  GET /elections/:id/my-eligibility
+  - 자격 확인 + 토큰 없으면 lazy 발급
+  - 응답: { eligible: true } | { eligible: false, reason: string }
+=====================================================
+*/
+router.get("/:id/my-eligibility", auth, async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const electionId = req.params.id;
+    const email = req.user.email;
+
+    // 1. 선거 존재 + active 확인
+    const [electionRows] = await conn.query(
+      `SELECT id, status, contract_address, token_contract_address
+       FROM elections WHERE id=?`,
+      [electionId]
+    );
+
+    if (electionRows.length === 0) {
+      return res.status(404).json({ eligible: false, reason: "election_not_found" });
+    }
+
+    const election = electionRows[0];
+
+    if (election.status !== ELECTION_STATUS.ACTIVE) {
+      return res.json({ eligible: false, reason: "election_not_active" });
+    }
+
+    // 2. election_student_list에서 명단 확인 (학번 기준)
+    const [listRows] = await conn.query(
+      `SELECT esl.student_id
+      FROM election_student_list esl
+      JOIN user_verifications uv ON uv.student_id = esl.student_id
+      WHERE esl.election_id = ? AND uv.email = ?`,
+      [electionId, email]
+    );
+
+    if (listRows.length === 0) {
+      return res.json({ eligible: false, reason: "not_in_voter_list" });
+    }
+
+    // 3. voters에서 인증+지갑+투표 상태 확인
+    const [voterRows] = await conn.query(
+      `SELECT v.id, v.token_issued_at, v.has_voted,
+              us.wallet_address,
+              COALESCE(uv.status, 'none') AS verification_status
+      FROM voters v
+      LEFT JOIN user_secrets us ON us.email = v.email
+      LEFT JOIN user_verifications uv ON uv.email = v.email
+      WHERE v.election_id = ? AND v.email = ?`,
+      [electionId, email]
+    );
+
+    // voters에 아직 행이 없으면 (미로그인 상태에서 명단만 등록된 케이스) — wallet 없음으로 처리
+    const voter = voterRows[0] || null;
+
+    // 재학 인증 미완료
+    if (!voter || voter.verification_status !== "approved") {
+      return res.json({ eligible: false, reason: "not_verified" });
+    }
+
+    // 지갑 미등록
+    if (!voter.wallet_address) {
+      return res.json({ eligible: false, reason: "wallet_not_registered" });
+    }
+
+    // 이미 투표함
+    if (voter.has_voted) {
+      return res.json({ eligible: false, reason: "already_voted" });
+    }
+
+    // 토큰 이미 있으면 바로 통과
+    if (voter.token_issued_at) {
+      return res.json({ eligible: true });
+    }
+    
+    // 4. 토큰 없으면 lazy 발급
+    if (!election.token_contract_address) {
+      return res.json({ eligible: false, reason: "token_contract_not_set" });
+    }
+
+    const { ethers } = require("ethers");
+    const VotingTokenABI = require("../abi/VotingToken.json");
+
+    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
+    const tokenContract = new ethers.Contract(
+      election.token_contract_address,
+      VotingTokenABI,
+      adminWallet
+    );
+
+    const tx = await tokenContract.issueTokenBatch([voter.wallet_address]);
+    await tx.wait();
+
+    await conn.query(
+      `UPDATE voters SET token_issued_at=NOW() WHERE election_id=? AND email=?`,
+      [electionId, email]
+    );
+
+    return res.json({ eligible: true });
+
+  } catch (err) {
+    console.error("my-eligibility 오류:", err);
+    res.status(500).json({ eligible: false, reason: "server_error" });
+  } finally {
+    conn.release();
+  }
+});
+
+/*
+=====================================================
+  POST /elections/:id/deploy
+  - ElectionFactory.createElection 호출
+  - 반환된 주소 DB 자동 등록
+=====================================================
+*/
+router.post("/:id/deploy", auth, adminOnly, async (req, res) => {
+  try {
+    const electionId = req.params.id;
+
+    const election = await getElectionById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: "선거 없음" });
+    }
+
+    if (election.status !== ELECTION_STATUS.PENDING) {
+      return res.status(400).json({ message: "pending 상태에서만 배포 가능" });
+    }
+
+    if (election.contract_address || election.token_contract_address) {
+      return res.status(400).json({ message: "이미 컨트랙트가 배포된 선거입니다." });
+    }
+
+    const { ethers } = require("ethers");
+    const ElectionFactoryABI = require("../abi/ElectionFactory.json");
+
+    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
+    const factory = new ethers.Contract(
+      process.env.FACTORY_ADDRESS,
+      ElectionFactoryABI,
+      adminWallet
+    );
+
+    const tx = await factory.createElection(electionId, adminWallet.address);
+    const receipt = await tx.wait();
+
+    // ElectionCreated 이벤트에서 주소 파싱
+    const iface = new ethers.Interface(ElectionFactoryABI);
+    let votingSystemAddress, votingTokenAddress;
+
+    for (const log of receipt.logs) {
+      try {
+        const parsed = iface.parseLog(log);
+        if (parsed.name === "ElectionCreated") {
+          votingSystemAddress = parsed.args.votingSystem;
+          votingTokenAddress = parsed.args.votingToken;
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!votingSystemAddress || !votingTokenAddress) {
+      return res.status(500).json({ message: "컨트랙트 주소 파싱 실패" });
+    }
+
+    await db.query(
+      `UPDATE elections
+       SET contract_address=?, token_contract_address=?
+       WHERE id=?`,
+      [votingSystemAddress, votingTokenAddress, electionId]
+    );
+
+    res.json({
+      message: "컨트랙트 배포 완료",
+      contract_address: votingSystemAddress,
+      token_contract_address: votingTokenAddress,
+      txHash: receipt.hash,
+    });
+  } catch (err) {
+    console.error("deploy 오류:", err);
+    res.status(500).json({ message: "서버 오류", error: err.message });
+  }
+});
+
+/*
+=====================================================
+  POST /elections/:id/voters/bulk
+  - 학번 명단 업로드 + 즉시 토큰 발급 (가입+인증 완료자만)
+  - 미가입자는 election_student_list에만 저장 → my-eligibility에서 lazy 발급
+=====================================================
+*/
+router.post("/:id/voters/bulk", auth, adminOnly, async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    const electionId = req.params.id;
+    const { student_ids } = req.body;
+
+    if (!Array.isArray(student_ids) || student_ids.length === 0) {
+      return res.status(400).json({ message: "학번 목록이 필요합니다." });
+    }
+
+    const election = await getElectionById(electionId);
+    if (!election) return res.status(404).json({ message: "선거 없음" });
+    if (!["pending", "active"].includes(election.status)) {
+      return res.status(400).json({ message: "pending 또는 active 상태에서만 명단 등록 가능" });
+    }
+
+    await conn.beginTransaction();
+
+    // 1. election_student_list에 upsert
+    for (const studentId of student_ids) {
+      await conn.query(
+        `INSERT IGNORE INTO election_student_list (election_id, student_id)
+         VALUES (?, ?)`,
+        [electionId, studentId]
+      );
+    }
+
+    // 2. total_voters 갱신
+    await conn.query(
+      `UPDATE elections SET total_voters = (
+         SELECT COUNT(*) FROM election_student_list WHERE election_id = ?
+       ) WHERE id = ?`,
+      [electionId, electionId]
+    );
+
+    // 3. 이미 가입+인증+지갑 있는 학번 선별 → 즉시 토큰 발급
+    const [eligible] = await conn.query(
+      `SELECT us.wallet_address, v.id AS voter_id
+       FROM election_student_list esl
+       JOIN user_verifications uv ON uv.student_id = esl.student_id
+       JOIN user_secrets us ON us.email = uv.email
+       LEFT JOIN voters v ON v.email = uv.email AND v.election_id = esl.election_id
+       WHERE esl.election_id = ?
+         AND esl.student_id IN (?)
+         AND uv.status = 'approved'
+         AND us.wallet_address IS NOT NULL
+         AND (v.token_issued_at IS NULL OR v.id IS NULL)`,
+      [electionId, student_ids]
+    );
+
+    let txHash = null;
+    const issuedCount = eligible.length;
+
+    if (issuedCount > 0 && election.token_contract_address) {
+      const { ethers } = require("ethers");
+      const VotingTokenABI = require("../abi/VotingToken.json");
+
+      const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+      const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
+      const tokenContract = new ethers.Contract(
+        election.token_contract_address,
+        VotingTokenABI,
+        adminWallet
+      );
+
+      const walletAddresses = eligible.map(e => e.wallet_address);
+      const tx = await tokenContract.issueTokenBatch(walletAddresses);
+      await tx.wait();
+      txHash = tx.hash;
+
+      const voterIds = eligible.filter(e => e.voter_id).map(e => e.voter_id);
+      if (voterIds.length > 0) {
+        await conn.query(
+          `UPDATE voters SET token_issued_at = NOW() WHERE id IN (?)`,
+          [voterIds]
+        );
+      }
+    }
+
+    await conn.commit();
+
+    res.json({
+      message: "명단 등록 완료",
+      total: student_ids.length,
+      issued: issuedCount,
+      pending: student_ids.length - issuedCount,
+      txHash,
+    });
+  } catch (err) {
+    await conn.rollback();
+    console.error("voters/bulk 오류:", err);
+    res.status(500).json({ message: "서버 오류", error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
 module.exports = router;

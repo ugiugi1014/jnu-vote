@@ -114,7 +114,13 @@ export default function App() {
     setPage("login");
   };
 
-  const handleVote = (vote) => { setCurrentVote(vote); setPage("detail"); };
+  const handleVote = (vote) => {
+    if (!wallet) { handleLogout(); return; }
+    if (userStatus !== "approved") { alert("재학증명서 인증이 필요합니다."); return; }
+    setCurrentVote(vote);
+    setPage("detail");
+  };
+  
   const handleResult = (vote) => { setCurrentVote(vote); setPage("result"); };
   const handleBack = () => setPage("list");
 

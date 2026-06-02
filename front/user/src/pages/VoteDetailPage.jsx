@@ -18,6 +18,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   const [showModal, setShowModal] = useState(false);
   const [showDonePopup, setShowDonePopup] = useState(false);
   const [candidates, setCandidates] = useState([]);
+  const [eligible, setEligible] = useState(null); // null=확인중
 
   useEffect(() => {
     fetch(`${BASE_URL}/elections/${vote.id}/candidates`)
@@ -25,6 +26,26 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       .then(data => setCandidates(data || []))
       .catch(() => alert("후보자 목록 로딩 실패"));
   }, [vote.id]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${BASE_URL}/elections/${vote.id}/my-eligibility`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.eligible) {
+          alert("투표 자격이 없습니다.");
+          onBack();
+        } else {
+          setEligible(true);
+        }
+      })
+      .catch(() => {
+        alert("자격 확인 중 오류가 발생했습니다.");
+        onBack();
+      });
+  }, [vote.id, token]);
 
   const selectedCandidate = candidates.find(c => c.candidate_index === selected);
   const maxCandidate = candidates.length;
@@ -133,7 +154,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       {/* 하단 버튼 */}
       <div className="bottom-actions-inner">
         <button className="btn btn-cancel" onClick={() => setSelected(null)}>취소</button>
-        <button className="btn btn-vote" disabled={selected === null} onClick={() => setShowModal(true)}>투표하기</button>
+        <button className="btn btn-vote" disabled={selected === null || eligible !== true} onClick={() => setShowModal(true)}>투표하기</button>
       </div>
 
       {/* 투표 확인 모달 */}
