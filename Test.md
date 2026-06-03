@@ -12,7 +12,7 @@
 - [x] `VotingToken`, `VotingSystem`, `ElectionFactory` 단위 테스트 커버리지 추가
 - [x] vote ZKP verifier / tally ZKP verifier mock 분기 테스트 완료
 - [x] 개표 결과 `recordTally` 체인 기록 시 tally proof 검증 흐름 테스트 완료
-- [x] 백엔드 API 기본 단위 테스트 완료: `18/18 PASS` (2026-06-03, Docker MySQL 테스트 DB)
+- [x] 백엔드 API 단위 테스트 완료: `29/29 PASS` (2026-06-03, Docker MySQL 테스트 DB)
 - [ ] E2E Happy Path 테스트 대기: 백엔드 API 테스트 완료 후 진행 권장
 
 ---
@@ -145,14 +145,12 @@ Postman 또는 curl로 진행한다. 보호된 API는 `Authorization: Bearer <to
 
 - 날짜: 2026-06-03
 - 방식: 서버 기동 + Docker MySQL 테스트 DB + PowerShell API 호출
-- 결과: `18/18 PASS`
-- 범위: health, 공개 선거 조회, OTP 검증, JWT 인증, 지갑 등록, 관리자 권한, 선거 생성/조회, 재학증명서 기본 검증, my-eligibility 기본 분기
+- 결과: `29/29 PASS`
+- 범위: health, OTP 검증, JWT 인증, 지갑 등록, 관리자 권한, 선거 생성/조회, 후보 일괄 등록, 결과 조회 제한, 토큰 발급 사전조건, 재학증명서 기본 검증, 관리자 인증 처리, my-eligibility 기본 분기, pending 선거 삭제
 
-### 2-0. 기본 API smoke/unit 18/18 PASS
+### 2-0. 기본 API smoke/unit 29/29 PASS
 
 - [x] `GET /health`: DB 연결 정상
-- [x] `GET /elections`: 공개 선거 목록 조회
-- [x] `POST /auth/send-code`: 외부 이메일 거절
 - [x] `POST /auth/verify-code`: 관리자 OTP 검증 및 JWT 발급
 - [x] `POST /auth/verify-code`: 학생 OTP 검증 및 JWT 발급
 - [x] `GET /auth/me`: JWT 기반 사용자 정보 조회
@@ -160,14 +158,32 @@ Postman 또는 curl로 진행한다. 보호된 API는 `Authorization: Bearer <to
 - [x] `POST /auth/wallet`: 최초 지갑 등록
 - [x] `POST /auth/wallet`: 같은 지갑 주소 재호출 성공
 - [x] `POST /auth/wallet`: 다른 지갑 주소 재등록 거절
+- [x] `POST /elections`: 필수값 누락 거절
+- [x] `POST /elections`: 종료 시간이 시작 시간보다 빠른 경우 거절
 - [x] `POST /elections`: 비관리자 선거 생성 거절
 - [x] `POST /elections`: 관리자 선거 생성
+- [x] `GET /elections`: 공개 선거 목록 조회
 - [x] `GET /elections/:id`: 선거 상세 조회
 - [x] `GET /elections/:id/coordinator/public-key`: 코디네이터 공개키 조회
+- [x] `PUT /elections/:id/candidates/bulk`: 빈 후보 배열 거절
+- [x] `PUT /elections/:id/candidates/bulk`: 후보 index 중복 거절
+- [x] `PUT /elections/:id/candidates/bulk`: 후보 index 범위 초과 거절
+- [x] `PUT /elections/:id/candidates/bulk`: 후보 3명 일괄 등록
+- [x] `GET /elections/:id/candidates`: 후보 목록 조회
+- [x] `GET /elections/:id/result`: tallied 전 결과 조회 거절
+- [x] `POST /elections/:id/start`: 컨트랙트 주소 미등록 상태 시작 거절
+- [x] `POST /elections/:id/tokens/issue`: token contract 미등록 상태 발급 거절
+- [x] `GET /verification/me`: 인증 없음 상태 조회
 - [x] `POST /verification/request`: 잘못된 문서번호 형식 거절
+- [x] `POST /verification/request`: 중복 문서번호 거절
 - [x] `GET /verification/admin`: 비관리자 접근 거절
 - [x] `GET /verification/admin?status=pending`: 관리자 목록 조회
+- [x] `PATCH /verification/admin/:id`: 잘못된 status 거절
+- [x] `PATCH /verification/admin/:id`: 관리자 승인 처리
 - [x] `GET /elections/:id/my-eligibility`: 없는 선거 분기 확인
+- [x] `GET /elections/:id/my-eligibility`: active 전 선거 분기 확인
+- [x] `DELETE /elections/:id`: pending 선거 삭제
+- [x] `GET /elections/:id`: 삭제 후 404 확인
 
 ### 2-1. 인증 흐름 (`server/src/routes/auth.js`)
 
