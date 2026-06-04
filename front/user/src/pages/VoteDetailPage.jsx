@@ -19,6 +19,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   const [showDonePopup, setShowDonePopup] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [eligible, setEligible] = useState(null); // null=확인중
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetch(`${BASE_URL}/elections/${vote.id}/candidates`)
@@ -51,6 +52,8 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   const maxCandidate = candidates.length;
 
   const handleConfirm = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try{
       const coordJWK = await fetch(`${BASE_URL}/elections/${vote.id}/coordinator/public-key`).then(r => r.json()).catch(() => alert("투표처리 중 오류가 발생했습니다. 다시 시도해주세요"));
       //const coordJWK = {"kty":"EC","x":"UyY8smusO47QR3tLqw8l1jvax1o3qtWkPIrC-MsYNq4","y":"aFHrGgBitQDva9i_UWEgEcn3cM5T2JlY4GunXMQvQ18","crv":"P-256"}; // mock
@@ -103,6 +106,8 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       setShowDonePopup(true);
     } catch (err){
       alert("투표 처리 중 오류가 발생했습니다: " + err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -172,7 +177,9 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
             </div>
             <div className="modal-actions">
               <button className="modal-btn modal-btn-cancel" onClick={() => setShowModal(false)}>취소</button>
-              <button className="modal-btn modal-btn-confirm" onClick={handleConfirm}>확인</button>
+              <button className="modal-btn modal-btn-confirm" disabled={isSubmitting} onClick={handleConfirm}>
+                {isSubmitting ? "처리중..." : "확인"}
+              </button>
             </div>
           </div>
         </div>
