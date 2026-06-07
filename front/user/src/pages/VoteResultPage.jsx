@@ -54,7 +54,7 @@ export default function VoteResultPage({ vote, onBack }) {
   const rows = result?.results || [];
   const totalVoters = vote?.total_voters || vote?.totalVoters || vote?.voters || "-";
   const turnout =
-    typeof totalVoters === "number" && totalVoters > 0
+    result && typeof totalVoters === "number" && totalVoters > 0
       ? `${((result.totalVotes / totalVoters) * 100).toFixed(1)}%`
       : "-";
 
