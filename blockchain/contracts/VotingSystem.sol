@@ -19,13 +19,13 @@ interface ITallyVerifier {
         uint[2] calldata a,
         uint[2][2] calldata b,
         uint[2] calldata c,
-        uint[23] calldata input
+        uint[1050] calldata input
     ) external view returns (bool);
 }
 
 contract VotingSystem is Initializable, OwnableUpgradeable {
-    uint256 private constant TALLY_MAX_VOTES = 10;
-    uint256 private constant TALLY_CANDIDATES = 3;
+    uint256 private constant TALLY_MAX_VOTES = 500;
+    uint256 private constant TALLY_CANDIDATES = 50;
 
     VotingToken public votingToken;
     IVoteVerifier public voteVerifier;
@@ -134,7 +134,7 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[23] calldata _pubSignals
+        uint[1050] calldata _pubSignals
     ) external onlyElectionAdmin whenElectionClosed {
         require(candidateIds.length == voteCounts.length, "array length mismatch");
         require(candidateIds.length == TALLY_CANDIDATES, "candidate count mismatch");
@@ -152,7 +152,7 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         }
 
         for (uint256 i = 0; i < TALLY_CANDIDATES; i++) {
-            require(_pubSignals[20 + i] == voteCounts[i], "tally result mismatch");
+            require(_pubSignals[2 * TALLY_MAX_VOTES + i] == voteCounts[i], "tally result mismatch");
         }
 
         require(tallyVerifier.verifyProof(_pA, _pB, _pC, _pubSignals), "tally proof failed");

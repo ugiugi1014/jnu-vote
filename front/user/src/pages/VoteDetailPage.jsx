@@ -52,6 +52,10 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   const maxCandidate = candidates.length;
 
   const handleConfirm = async () => {
+    if (!wallet?.privateKey) {
+      alert("지갑 정보가 없습니다. 다시 로그인해주세요.");
+      return;
+    }
     if (isSubmitting) return;
     setIsSubmitting(true);
     try{
@@ -159,7 +163,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       {/* 하단 버튼 */}
       <div className="bottom-actions-inner">
         <button className="btn btn-cancel" onClick={() => setSelected(null)}>취소</button>
-        <button className="btn btn-vote" disabled={selected === null || eligible !== true} onClick={() => setShowModal(true)}>투표하기</button>
+        <button className="btn btn-vote" disabled={selected === null || eligible !== true || !wallet} onClick={() => setShowModal(true)}>투표하기</button>
       </div>
 
       {/* 투표 확인 모달 */}

@@ -65,8 +65,8 @@ function generateTallyZkpInput({ zkpVotes, tally, candidatesCount }) {
   const ciphertexts = padded.map((v, i) => toCircuitValue(v.ciphertext, `ciphertexts[${i}]`));
 
   const adminResult = [];
-  for (let candidateIndex = 0; candidateIndex < candidatesCount; candidateIndex++) {
-    adminResult.push(toCircuitValue(tally[candidateIndex] || 0, `adminResult[${candidateIndex}]`));
+  for (let c = 0; c < circuitCandidates; c++) {
+    adminResult.push(toCircuitValue(tally[c] || 0, `adminResult[${c}]`));
   }
 
   return {

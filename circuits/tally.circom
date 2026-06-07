@@ -19,6 +19,7 @@ template Tally(n, numCandidates) {
     signal candidateIds[n];
     signal votes[n][numCandidates];
     signal tally[numCandidates];
+    signal tallyAcc[numCandidates][n+1];
 
     // 컴포넌트 선언
     component pos[n];
@@ -65,13 +66,13 @@ template Tally(n, numCandidates) {
 
     // 6. 득표 합산 및 관리자 집계 결과와 비교
     for (var c = 0; c < numCandidates; c++) {
-        var sum = 0;
+        tallyAcc[c][0] <== 0;
         for (var i = 0; i < n; i++) {
-            sum += votes[i][c];
+            tallyAcc[c][i+1] <== tallyAcc[c][i] + votes[i][c];
         }
-        tally[c] <== sum;
+        tally[c] <== tallyAcc[c][n];
         tally[c] === adminResult[c];
     }
 }
 
-component main {public [nonces, ciphertexts, adminResult]} = Tally(10, 3);
+component main {public [nonces, ciphertexts, adminResult]} = Tally(500, 50);
