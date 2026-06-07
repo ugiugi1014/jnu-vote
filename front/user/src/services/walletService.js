@@ -58,12 +58,9 @@ export async function castVote(connectedWallet, contractAddress, abi, nullifier,
     nullifier,
     encryptedData,
     voterPubKey,
-    [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])],
-    [
-      [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
-      [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
-    ],
-    [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])]
+    proof.pi_a.slice(0, 2).map(BigInt),
+    [proof.pi_b[0].map(BigInt), proof.pi_b[1].map(BigInt)],
+    proof.pi_c.slice(0, 2).map(BigInt)
   );
   await tx.wait();
   return tx;

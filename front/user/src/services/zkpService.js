@@ -14,7 +14,6 @@ export async function generateVoteProof(secret, candidateId, maxCandidates) {
     {
       secret: secret.toString(),
       candidateId: candidateId.toString(),
-      maxCandidates: maxCandidates.toString(),
     },
     '/voteProof.wasm',
     '/voteProof_final.zkey'
