@@ -301,6 +301,20 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: "contract_address, token_contract_address 등록 후 시작 가능" });
     }
 
+    const { ethers } = require("ethers");
+    const VOTING_SYSTEM_ABI = [
+      "function openElection() external",
+    ];
+    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
+    const votingSystem = new ethers.Contract(
+      election.contract_address,
+      VOTING_SYSTEM_ABI,
+      adminWallet
+    );
+    const tx = await votingSystem.openElection();
+    await tx.wait();
+    
     const [result] = await db.query(
       `UPDATE elections
        SET status=?
@@ -332,6 +346,18 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
 router.post("/:id/close", auth, adminOnly, async (req, res) => {
   try {
     const electionId = req.params.id;
+
+    const election = await getElectionById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: "선거 없음" });
+    }
+    if (election.status !== ELECTION_STATUS.ACTIVE) {
+      return res.status(400).json({ message: "선거 종료 실패 (active 상태만 가능)" });
+    }
+
+    // 체인 closeElection() 선행 — recordTally의 whenElectionClosed 전제 (start의 openElection 대칭)
+    const { closeElectionOnChain } = require("../blockchain/votingContract");
+    await closeElectionOnChain(election.contract_address);
 
     const [result] = await db.query(
       `UPDATE elections
@@ -409,9 +435,9 @@ router.post("/:id/candidates", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: "name, candidate_index 필수" });
     }
 
-    if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 2) {
+    if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 4) {
       return res.status(400).json({
-        message: "candidate_index는 tally.circom 기준 0, 1, 2 중 하나여야 합니다.",
+        message: "candidate_index는 tally.circom 기준 0~4 중 하나여야 합니다.",
       });
     }
 
@@ -454,8 +480,8 @@ router.put("/:id/candidates/bulk", auth, adminOnly, async (req, res) => {
   const electionId = req.params.id;
   const { candidates } = req.body;
 
-  if (!Array.isArray(candidates) || candidates.length === 0 || candidates.length > 3) {
-    return res.status(400).json({ message: "candidates는 1~3개 배열이어야 합니다." });
+  if (!Array.isArray(candidates) || candidates.length === 0 || candidates.length > 5) {
+    return res.status(400).json({ message: "candidates는 1~5개 배열이어야 합니다." });
   }
 
   const seenIndexes = new Set();
@@ -466,9 +492,9 @@ router.put("/:id/candidates/bulk", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: "name, candidate_index 필수" });
     }
 
-    if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 2) {
+    if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 4) {
       return res.status(400).json({
-        message: "candidate_index는 tally.circom 기준 0, 1, 2 중 하나여야 합니다.",
+        message: "candidate_index는 tally.circom 기준 0~4 중 하나여야 합니다.",
       });
     }
 
@@ -1128,8 +1154,10 @@ router.get("/:id/my-eligibility", auth, async (req, res) => {
       return res.json({ eligible: false, reason: "already_voted" });
     }
 
-    // 토큰 이미 있으면 바로 통과
+    // 토큰 이미 있으면 바로 통과 (단, 가스 부족 시 보충 — castVote 가스 보장)
     if (voter.token_issued_at) {
+      const { fundVoterGas } = require("../blockchain/votingContract");
+      await fundVoterGas([voter.wallet_address]);
       return res.json({ eligible: true });
     }
     
@@ -1155,6 +1183,10 @@ router.get("/:id/my-eligibility", auth, async (req, res) => {
       `UPDATE voters SET token_issued_at=NOW() WHERE election_id=? AND email=?`,
       [electionId, email]
     );
+
+    // 토큰 발급과 함께 가스(ETH)도 발급
+    const { fundVoterGas } = require("../blockchain/votingContract");
+    await fundVoterGas([voter.wallet_address]);
 
     return res.json({ eligible: true });
 
@@ -1319,6 +1351,10 @@ router.post("/:id/voters/bulk", auth, adminOnly, async (req, res) => {
       await tx.wait();
       txHash = tx.hash;
       issuedCount = eligible.length;
+
+      // 토큰 발급과 함께 가스(ETH)도 발급 — castVote는 투표자 지갑이 직접 가스 지불
+      const { fundVoterGas } = require("../blockchain/votingContract");
+      await fundVoterGas(walletAddresses);
 
       for (const voter of eligible) {
         await conn.query(

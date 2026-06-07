@@ -51,7 +51,7 @@ async function closeAndTallyElection(electionId) {
     await conn.beginTransaction();
 
     const [rows] = await conn.query(
-      `SELECT id, status, end_time
+      `SELECT id, status, end_time, contract_address
        FROM elections
        WHERE id = ?
        FOR UPDATE`,
@@ -87,6 +87,15 @@ async function closeAndTallyElection(electionId) {
 
     await conn.commit();
     clearElectionSchedule(electionId);
+
+    // 체인 closeElection() 선행 — 안 하면 runAutoTally의 recordTally가 whenElectionClosed로 revert
+    try {
+      const { closeElectionOnChain } = require("../blockchain/votingContract");
+      await closeElectionOnChain(election.contract_address);
+    } catch (err) {
+      console.error(`[scheduler] election ${electionId} 체인 closeElection 실패:`, err.message);
+    }
+
     await runAutoTally(electionId);
   } catch (err) {
     await conn.rollback();

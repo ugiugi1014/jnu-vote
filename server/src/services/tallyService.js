@@ -31,12 +31,13 @@ function toSolidityProof(proof, publicSignals) {
   if (!proof?.pi_a || !proof?.pi_b || !proof?.pi_c) {
     throw new Error("tally proof 형식 오류");
   }
-  if (!Array.isArray(publicSignals) || publicSignals.length !== 23) {
-    throw new Error("tally publicSignals는 23개여야 합니다.");
+  if (!Array.isArray(publicSignals) || publicSignals.length !== 105) {
+    throw new Error("tally publicSignals는 105개여야 합니다.");
   }
 
   return {
     pA: proof.pi_a.slice(0, 2).map(BigInt),
+    // pi_b inner pair swap (snarkjs exportSolidityCallData 규약과 동일)
     pB: [
       [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
       [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
@@ -194,8 +195,14 @@ async function performTally(electionId) {
     let tallyTxHash = null;
     let recordTallyError = null;
     try {
-      const candidateIds = candidateRows.map((c) => c.id);
-      const voteCounts = candidateRows.map((c) => tally[c.candidate_index] || 0);
+      const TALLY_CANDIDATES = 5;
+      const candidateIds = [];
+      const voteCounts = [];
+      for (let c = 0; c < TALLY_CANDIDATES; c++) {
+        const id = candidateMap[c];          // 해당 index의 후보 id, 없으면 undefined
+        candidateIds.push(id != null ? id : 0);
+        voteCounts.push(tally[c] || 0);
+      }
       const solidityProof = toSolidityProof(proofResult.proof, proofResult.publicSignals);
 
       const tx = await contract.recordTally(

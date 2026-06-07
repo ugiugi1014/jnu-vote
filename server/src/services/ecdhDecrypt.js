@@ -108,17 +108,17 @@ async function decryptVote({ ciphertext, nonce }, coordPrivKey, voterPubKey) {
 }
 
 // 체인의 encryptedData (bytes) → { ciphertext, nonce } 파싱
-// 프론트가 JSON.stringify 후 UTF-8 bytes 로 인코딩해서 castVote 호출한다고 가정
+// 프론트(VoteDetailPage)·컨트랙트(VotingSystem.recordTally)와 동일하게
+// abi.encode(uint256 ciphertext, uint256 nonce) 형식으로 디코딩한다.
 function parseEncryptedData(encryptedData) {
   if (!encryptedData) {
     throw new Error("encryptedData 비어있음");
   }
-  // hex (0x...) 면 utf8 디코딩, 아니면 그대로 문자열로 취급
-  const text =
-    typeof encryptedData === "string" && encryptedData.startsWith("0x")
-      ? ethers.toUtf8String(encryptedData)
-      : String(encryptedData);
-  return JSON.parse(text);
+  const [ciphertext, nonce] = ethers.AbiCoder.defaultAbiCoder().decode(
+    ["uint256", "uint256"],
+    encryptedData
+  );
+  return { ciphertext: ciphertext.toString(), nonce: nonce.toString() };
 }
 
 // 투표자 공개키 (bytes 또는 JSON 문자열) → JWK 객체

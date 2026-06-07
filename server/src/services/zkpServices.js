@@ -29,8 +29,8 @@ function generateTallyZkpInput({ zkpVotes, tally, candidatesCount }) {
     throw new Error("zkpVotes 배열이 필요합니다.");
   }
 
-  const circuitVotes = Number(process.env.TALLY_CIRCUIT_VOTES || 10);
-  const circuitCandidates = Number(process.env.TALLY_CIRCUIT_CANDIDATES || 3);
+  const circuitVotes = Number(process.env.TALLY_CIRCUIT_VOTES || 50);
+  const circuitCandidates = Number(process.env.TALLY_CIRCUIT_CANDIDATES || 5);
 
   if (zkpVotes.length > circuitVotes) {
     throw new Error(
@@ -38,9 +38,9 @@ function generateTallyZkpInput({ zkpVotes, tally, candidatesCount }) {
     );
   }
 
-  if (candidatesCount !== circuitCandidates) {
+  if (candidatesCount > circuitCandidates) {
     throw new Error(
-      `tally 회로 후보 수 불일치: circuit=${circuitCandidates}, actual=${candidatesCount}`
+      `tally 회로 후보 수 초과: circuit=${circuitCandidates}, actual=${candidatesCount}. 회로 사이즈를 늘려야 합니다.`
     );
   }
 
@@ -119,7 +119,11 @@ function runCircomProof(inputJson) {
     path.join(buildDir, "tally_final.zkey"),
     path.join(buildDir, "tally.zkey"),
   ], "tally.zkey");
-  const snarkjsBin = process.env.SNARKJS_BIN || "snarkjs";
+  // snarkjs CLI는 PATH에 없을 수 있으므로 설치된 cli.cjs를 node로 직접 실행
+  // (exports 제한으로 subpath resolve 불가 → 패키지 메인 디렉터리 기준으로 경로 구성)
+  const snarkjsCli =
+    process.env.SNARKJS_BIN ||
+    path.join(path.dirname(require.resolve("snarkjs")), "cli.cjs");
 
   fs.mkdirSync(buildDir, { recursive: true });
   assertFileExists(wasmPath, "tally.wasm");
@@ -135,7 +139,7 @@ function runCircomProof(inputJson) {
   });
 
   // 3) proof 생성
-  execFileSync(snarkjsBin, ["groth16", "prove", zkeyPath, witnessPath, proofPath, publicPath], {
+  execFileSync("node", [snarkjsCli, "groth16", "prove", zkeyPath, witnessPath, proofPath, publicPath], {
     stdio: "inherit",
   });
 
