@@ -93,10 +93,10 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       const voterPubKeyBytes = ethers.toUtf8Bytes(JSON.stringify(voterPublicKey));
       // castVote 호출
       const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPC_URL);
-      const connectedWallet = wallet.connect(provider);
+      const connectedWallet = new ethers.Wallet(wallet.privateKey, provider);
       const tx = await castVote(connectedWallet, vote.contract_address, VotingSystemABI, nullifierBytes32, encryptedData, voterPubKeyBytes, proof);
 
-      await fetch(`${BASE_URL}/vote/confirm`, {
+      const confirmRes = await fetch(`${BASE_URL}/vote/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
@@ -105,6 +105,11 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
           voter_public_key: JSON.stringify(voterPublicKey),
         }),
       });
+
+      if (!confirmRes.ok) {
+        const errData = await confirmRes.json().catch(() => null);
+        throw new Error(errData?.message || "vote/confirm 실패 (tx는 체인에 기록됨)");
+      }
 
       setShowModal(false);
       setShowDonePopup(true);

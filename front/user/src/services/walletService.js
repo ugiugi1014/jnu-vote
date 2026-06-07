@@ -59,7 +59,11 @@ export async function castVote(connectedWallet, contractAddress, abi, nullifier,
     encryptedData,
     voterPubKey,
     proof.pi_a.slice(0, 2).map(BigInt),
-    [proof.pi_b[0].map(BigInt), proof.pi_b[1].map(BigInt)],
+    // pi_b inner pair swap (snarkjs exportSolidityCallData 규약과 동일)
+    [
+      [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
+      [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
+    ],
     proof.pi_c.slice(0, 2).map(BigInt)
   );
   await tx.wait();
