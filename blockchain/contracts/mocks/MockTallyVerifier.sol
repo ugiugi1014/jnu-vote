@@ -13,7 +13,7 @@ contract MockTallyVerifier {
         uint[2] calldata,
         uint[2][2] calldata,
         uint[2] calldata,
-        uint[23] calldata
+        uint[105] calldata
     ) external view returns (bool) {
         return shouldVerify;
     }

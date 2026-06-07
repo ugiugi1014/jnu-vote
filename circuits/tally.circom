@@ -75,4 +75,4 @@ template Tally(n, numCandidates) {
     }
 }
 
-component main {public [nonces, ciphertexts, adminResult]} = Tally(500, 50);
+component main {public [nonces, ciphertexts, adminResult]} = Tally(50, 5);
