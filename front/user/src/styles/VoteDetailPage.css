@@ -7,7 +7,7 @@
   width: 52px; height: 52px; border-radius: 50%; background: #1a5fa8;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.info-body { flex: 1; }
+.info-body { flex: 1; min-width: 0; }
 .info-title { font-size: clamp(16px, 1.8vw, 20px); font-weight: 700; color: #111; letter-spacing: -0.4px; margin-bottom: 6px; text-align: left; }
 .info-deadline { font-size: 13px; color: #999; margin-bottom: 14px; text-align: left; }
 .info-desc { font-size: 14px; color: #555; line-height: 1.6; text-align: left; }
@@ -38,7 +38,7 @@
   transition: background 0.15s, color 0.15s;
 }
 .candidate-card.selected .candidate-number { background: #1a5fa8; color: #fff; }
-.candidate-info { flex: 1; text-align: left; }
+.candidate-info { flex: 1; min-width: 0; text-align: left; }
 .candidate-name { font-size: 17px; font-weight: 700; color: #111; letter-spacing: -0.3px; margin-bottom: 4px; }
 .candidate-dept { font-size: 13px; color: #888; margin-bottom: 8px; }
 .candidate-slogan { font-size: 14px; color: #555; }
@@ -80,6 +80,56 @@
 .modal-btn-confirm:hover { background: #333; }
 
 @media (max-width: 600px) {
-  .candidate-card { padding: 16px; }
-  .bottom-actions-inner { padding: 12px 4%; }
+  .info-card {
+    padding: 18px 16px;
+    gap: 12px;
+    border-radius: 12px;
+  }
+  .info-icon {
+    width: 42px;
+    height: 42px;
+  }
+  .info-title,
+  .candidate-name {
+    line-height: 1.35;
+    word-break: keep-all;
+  }
+  .info-deadline,
+  .candidate-dept,
+  .candidate-slogan {
+    overflow-wrap: anywhere;
+  }
+  .warning-banner {
+    align-items: flex-start;
+    padding: 13px 14px;
+    line-height: 1.55;
+    margin-bottom: 22px;
+  }
+  .candidate-card {
+    padding: 16px 14px;
+    gap: 12px;
+  }
+  .candidate-number {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+  }
+  .bottom-actions-inner {
+    padding: 12px 4% max(12px, env(safe-area-inset-bottom));
+  }
+  .btn {
+    padding: 13px 12px;
+    font-size: 15px;
+  }
+  .modal-overlay {
+    padding: 14px;
+    align-items: flex-end;
+  }
+  .modal {
+    padding: 24px 18px 18px;
+    border-radius: 14px;
+  }
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
 }

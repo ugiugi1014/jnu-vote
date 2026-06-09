@@ -74,3 +74,39 @@
   cursor: pointer; font-family: inherit; margin-bottom: 10px; transition: background 0.15s;
 }
 .waiting-refresh-btn:hover { background: #333; }
+
+@media (max-width: 600px) {
+  .upload-wrapper {
+    align-items: flex-start;
+    min-height: calc(100vh - 120px);
+    padding: 18px 4% 40px;
+  }
+
+  .upload-card {
+    padding: 28px 20px;
+    border-radius: 12px;
+  }
+
+  .upload-card-title,
+  .waiting-title {
+    font-size: 18px;
+    line-height: 1.35;
+    word-break: keep-all;
+  }
+
+  .upload-card-desc,
+  .waiting-desc,
+  .upload-notice,
+  .upload-error {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .upload-dropzone {
+    padding: 28px 16px;
+  }
+
+  .upload-preview {
+    height: 170px;
+  }
+}

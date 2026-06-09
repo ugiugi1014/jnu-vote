@@ -13,6 +13,20 @@ import "../styles/VoteDetailPage.css";
 const LOGO = "/src/jejun.png";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).replace("T", " ").slice(0, 16);
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   const [selected, setSelected] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -137,7 +151,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
           <div className="info-icon"><Icon.Ballot /></div>
           <div className="info-body">
             <div className="info-title">{vote.title}</div>
-            <div className="info-deadline">투표 마감: {vote.end_time}</div>
+            <div className="info-deadline">투표 마감: {formatDateTime(vote.end_time)}</div>
             <div className="info-desc">{vote.description}</div>
           </div>
         </div>

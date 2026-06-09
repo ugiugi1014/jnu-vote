@@ -26,5 +26,50 @@
 .footer-note { text-align: center; margin-top: 28px; font-size: 13px; color: #bbb; padding: 20px; background: #fff; border-radius: 12px; border: 1px solid #f0f0f0; }
 
 @media (max-width: 600px) {
-  .stats-grid { grid-template-columns: 1fr; }
+  .info-card-simple {
+    padding: 18px 16px;
+    border-radius: 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-value {
+    font-size: 21px;
+  }
+
+  .result-card {
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 14px;
+    border-radius: 12px;
+  }
+
+  .rank-circle {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+
+  .result-name {
+    line-height: 1.35;
+    word-break: keep-all;
+  }
+
+  .result-pct {
+    min-width: 38px;
+    font-size: 13px;
+  }
+
+  .footer-note {
+    padding: 16px 14px;
+    line-height: 1.5;
+  }
 }

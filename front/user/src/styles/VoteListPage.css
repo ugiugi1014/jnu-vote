@@ -1,5 +1,6 @@
 .page-title { font-size: clamp(20px, 2.5vw, 28px); font-weight: 700; color: #111; letter-spacing: -0.6px; margin-bottom: 6px; text-align: left; }
 .page-desc { font-size: clamp(13px, 1.2vw, 15px); color: #888; margin-bottom: 32px; text-align: left; }
+.header-status-area { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 
 .tab-bar {
   display: flex; background: #eee; border-radius: 12px; padding: 4px;
@@ -25,7 +26,8 @@
 .vote-card-desc { font-size: 14px; color: #888; margin-bottom: 20px; line-height: 1.5; text-align: left; }
 .vote-card-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .vote-card-meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.meta-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #999; }
+.meta-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #999; line-height: 1.5; }
+.vote-action-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 
 .vote-button {
   padding: 11px 24px; border-radius: 10px; font-size: 14px; font-weight: 600;
@@ -41,6 +43,53 @@
 .empty-state { text-align: center; padding: 80px 0; color: #bbb; font-size: 15px; }
 
 @media (max-width: 600px) {
+  .page-desc { margin-bottom: 22px; line-height: 1.5; }
+  .header-status-area {
+    width: 100%;
+    align-items: stretch;
+  }
   .tab-item { padding: 10px 14px; font-size: 13px; }
-  .vote-card { padding: 20px 16px; }
+  .tab-bar {
+    width: 100%;
+  }
+  .tab-item {
+    flex: 1;
+  }
+  .vote-card {
+    padding: 18px 16px;
+    border-radius: 12px;
+  }
+  .vote-card-title {
+    line-height: 1.35;
+    word-break: keep-all;
+  }
+  .vote-card-desc {
+    margin-bottom: 16px;
+    word-break: keep-all;
+  }
+  .vote-card-bottom {
+    align-items: stretch;
+  }
+  .vote-card-meta {
+    width: 100%;
+    gap: 8px;
+  }
+  .meta-item {
+    width: 100%;
+    align-items: flex-start;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .meta-item svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .vote-action-stack {
+    width: 100%;
+    align-items: stretch;
+  }
+  .vote-button {
+    width: 100%;
+    padding: 12px 16px;
+  }
 }

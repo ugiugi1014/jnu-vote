@@ -6,6 +6,20 @@ import "../styles/VoteListPage.css";
 const LOGO = "/src/jejun.png";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).replace("T", " ").slice(0, 16);
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 function AuthStatus({ status, onGoUpload }) {
   if (status === "approved") {
     return <span className="auth-approved">🟢 인증완료</span>;
@@ -31,7 +45,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
     fetch(`${BASE_URL}/elections`)
       .then(r => r.json())
       .then(data =>{
-        if (!cancelled) setVotes((data || []).filter(v => v.status === activeTab || (activeTab === "closed" && v.status === "tallied")))
+        if (!cancelled) setVotes((data || []).filter(v => v.status === activeTab || (activeTab === "closed" && v.status === "tallied")));
       });
     return () => { cancelled = true; };
   }, [activeTab]);
@@ -52,8 +66,8 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
               <span className="header-subtitle">Jeju National University E-Voting</span>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="header-status-area">
+            <div className="header-right">
               <div className="header-user"><Icon.User /><span>{studentId}</span></div>
               <button className="logout-button" onClick={onLogout}><Icon.Logout />로그아웃</button>
             </div>
@@ -97,11 +111,11 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
               <div className="vote-card-desc">{vote.description}</div>
               <div className="vote-card-bottom">
                 <div className="vote-card-meta">
-                  <span className="meta-item"><Icon.Calendar />{vote.start_time} ~ {vote.end_time}</span>
+                  <span className="meta-item"><Icon.Calendar />{formatDateTime(vote.start_time)} ~ {formatDateTime(vote.end_time)}</span>
                   {vote.voted_count != null && <span className="meta-item"><Icon.People color="#999" />투표자 {vote.voted_count}</span>}
                 </div>
                 {vote.status === "active" && !vote.voted && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                  <div className="vote-action-stack">
                     <button
                       className={`vote-button ${isApproved ? "vote-button-primary" : "vote-button-outline"}`}
                       style={!isApproved ? { color: "#bbb", borderColor: "#e0e0e0", cursor: "not-allowed" } : {}}
