@@ -7,6 +7,11 @@ export default defineConfig({
     react(),
     nodePolyfills(),
   ],
+  // 증명 생성 워커(src/workers/voteProofWorker.js)도 snarkjs 를 쓰므로 같은 polyfill 적용
+  worker: {
+    format: 'es',
+    plugins: () => [nodePolyfills()],
+  },
   server: {
     port: 3000,
     proxy: {

@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { Icon } from "../components/Icons";
-import { generateECDHKeyPair, deriveSharedKeyAndDispose, importCoordPublicKey, exportPublicKey, exportSharedKeyAsBigInt } from '../services/ecdhService';
+import { encryptVote } from '../services/ecdhService';
 import { privateKeyToBigInt } from '../services/walletService';
-import { generateSecret, generateVoteProof } from '../services/zkpService';
-import { encryptCandidate } from '../services/poseidonService';
+import { generateSecret, generateVoteProof, preloadVoteProof } from '../services/zkpService';
 import { castVote } from '../services/walletService';
 import { ethers } from 'ethers';
 import VotingSystemABI from '../abi/VotingSystem.json';
@@ -34,6 +33,12 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   const [candidates, setCandidates] = useState([]);
   const [eligible, setEligible] = useState(null); // null=확인중
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [stage, setStage] = useState("");
+
+  // 증명용 회로 파일을 미리 받아둔다 (워커에서 백그라운드로)
+  useEffect(() => {
+    preloadVoteProof();
+  }, []);
 
   useEffect(() => {
     fetch(`${BASE_URL}/elections/${vote.id}/candidates`)
@@ -63,7 +68,6 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   }, [vote.id, token]);
 
   const selectedCandidate = candidates.find(c => c.candidate_index === selected);
-  const maxCandidate = candidates.length;
 
   const handleConfirm = async () => {
     if (!wallet?.privateKey) {
@@ -73,42 +77,44 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try{
-      const coordJWK = await fetch(`${BASE_URL}/elections/${vote.id}/coordinator/public-key`).then(r => r.json()).catch(() => alert("투표처리 중 오류가 발생했습니다. 다시 시도해주세요"));
-      //const coordJWK = {"kty":"EC","x":"UyY8smusO47QR3tLqw8l1jvax1o3qtWkPIrC-MsYNq4","y":"aFHrGgBitQDva9i_UWEgEcn3cM5T2JlY4GunXMQvQ18","crv":"P-256"}; // mock
-
-      //키쌍 생성
-      const keyPair = await generateECDHKeyPair();
-      //관리자 공개키 가져오기
-      const coordPublicKey = await importCoordPublicKey(coordJWK);
-      //투표자 공개키 가져오기
-      const voterPublicKey = await exportPublicKey(keyPair.publicKey);
-      //공유키 생성
-      const sharedKey = await deriveSharedKeyAndDispose(keyPair, coordPublicKey);
-      //공유키 타입변환
-      const sharedKeyBigInt = await exportSharedKeyAsBigInt(sharedKey);
-      //지갑 키 가져오기
-      const walletPrivateKeyBigInt = privateKeyToBigInt(wallet.privateKey);
-      //지갑 생성 및 지갑을 secret으로 사용
-      const secret = await generateSecret(walletPrivateKeyBigInt, vote.id);
-      //투표 유효성 검사
-      const { proof, nullifier } = await generateVoteProof(secret, selected, maxCandidate);
-      // 부호화된 문장과 nonce 받기
-      const { ciphertext, nonce } = await encryptCandidate(selected, sharedKeyBigInt);
-      // nullifier BigInt → bytes32
-      const nullifierBytes32 = ethers.zeroPadValue(
-        ethers.toBeHex(BigInt(nullifier)), 32
-      );
-      // ciphertext + nonce → bytes (ABI encode)
-      const encryptedData = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint256', 'uint256'],
-        [BigInt(ciphertext), BigInt(nonce)]
-      );
-      // voterPublicKey JWK → bytes
-      const voterPubKeyBytes = ethers.toUtf8Bytes(JSON.stringify(voterPublicKey));
-      // castVote 호출
+      const ZERO = 0n;
+      const abi = ethers.AbiCoder.defaultAbiCoder();
       const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPC_URL);
+
+      // 1) 코디네이터 공개키·후보 수는 체인(VotingSystem)에서 직접 읽는다.
+      //    서버가 다른 키를 내려줘도 증명의 공개 입력이 체인 값과 달라 castVote 가 거절되므로 서버 신뢰 불필요.
+      setStage("선거 정보 확인 중...");
+      const votingSystem = new ethers.Contract(vote.contract_address, VotingSystemABI, provider);
+      const [coordPubX, coordPubY, numCandidates] = await Promise.all([
+        votingSystem.coordPubX(), votingSystem.coordPubY(), votingSystem.numCandidates(),
+      ]);
+      if (coordPubX === ZERO || numCandidates === ZERO) {
+        throw new Error("선거가 아직 설정되지 않았습니다.");
+      }
+
+      // 2) BabyJubJub ECDH + Poseidon 암호화 (임시 키는 증명 생성 후 버려짐)
+      setStage("투표 암호화 중...");
+      const { ciphertext, ephPriv, ephPubX, ephPubY } = await encryptVote(selected, { x: coordPubX, y: coordPubY });
+
+      // 3) secret = Poseidon(지갑 개인키, 선거 ID) -> nullifier
+      const walletPrivateKeyBigInt = privateKeyToBigInt(wallet.privateKey);
+      const secret = await generateSecret(walletPrivateKeyBigInt, vote.id);
+
+      // 4) 투표 유효성 증명 (워커) — 암호문이 유효 후보를 등록된 키로 암호화한 것임을 증명
+      setStage("투표 증명 생성 중...");
+      const { proof, nullifier } = await generateVoteProof({
+        secret, candidateId: selected, ephPriv,
+        numCandidates, coordPubX, coordPubY, ciphertext, ephPubX, ephPubY,
+      });
+
+      // 5) 체인 제출
+      setStage("블록체인에 제출 중...");
+      const nullifierBytes32 = ethers.zeroPadValue(ethers.toBeHex(BigInt(nullifier)), 32);
+      const encryptedData = abi.encode(['uint256'], [ciphertext]);
+      const voterPubKeyBytes = abi.encode(['uint256', 'uint256'], [ephPubX, ephPubY]);
       const connectedWallet = new ethers.Wallet(wallet.privateKey, provider);
       const tx = await castVote(connectedWallet, vote.contract_address, VotingSystemABI, nullifierBytes32, encryptedData, voterPubKeyBytes, proof);
+      const voterPublicKey = { x: ephPubX.toString(), y: ephPubY.toString() };
 
       const confirmRes = await fetch(`${BASE_URL}/vote/confirm`, {
         method: 'POST',
@@ -131,6 +137,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       alert("투표 처리 중 오류가 발생했습니다: " + err.message);
     } finally {
       setIsSubmitting(false);
+      setStage("");
     }
   };
 
@@ -201,7 +208,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
             <div className="modal-actions">
               <button className="modal-btn modal-btn-cancel" onClick={() => setShowModal(false)}>취소</button>
               <button className="modal-btn modal-btn-confirm" disabled={isSubmitting} onClick={handleConfirm}>
-                {isSubmitting ? "처리중..." : "확인"}
+                {isSubmitting ? (stage || "처리중...") : "확인"}
               </button>
             </div>
           </div>

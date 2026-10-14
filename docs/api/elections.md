@@ -33,7 +33,7 @@ pending → active → closed → tallied
 {
   "message": "선거 생성 완료",
   "election_id": 1,
-  "coord_public_key": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"...\",\"y\":\"...\"}"
+  "coord_public_key": "{\"x\":\"...\",\"y\":\"...\"}"
 }
 ```
 
@@ -101,15 +101,15 @@ pending → active → closed → tallied
 
 ## `GET /elections/:id/coordinator/public-key`
 
-투표 시 ECDH 용 코디네이터 JWK 공개키 반환.
+코디네이터 BabyJubJub 공개키 반환 (10진수 문자열).
+프론트는 투표 시 체인의 `VotingSystem.coordPubX/Y` 를 직접 읽으므로 이 API 는 참고/관리용.
+선거 시작(`POST /:id/start`) 시 서버가 `configureElection(coordPubX, coordPubY, numCandidates)` 로 체인에 고정한다.
 
 **권한**: public
 
 **성공 (200)**:
 ```json
 {
-  "kty": "EC",
-  "crv": "P-256",
   "x": "...",
   "y": "..."
 }

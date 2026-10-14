@@ -37,9 +37,9 @@
 **처리 흐름**:
 1. 체인에서 `getAllVotes()` 조회 → `[{ encryptedData, voterPublicKey }, ...]`
 2. 각 vote 마다:
-   - `encryptedData` → `{ ciphertext, nonce }` 파싱
-   - ECDH(`coord_private_key`, `voterPublicKey`) → 공유키 도출
-   - Poseidon 복호화 → candidateID 복원
+   - `encryptedData` → `{ ciphertext }`, `voterPublicKey` → `{ x, y }` 파싱
+   - shared = `coord_private_key` * ephPub (BabyJubJub)
+   - candidateID = ciphertext - Poseidon(shared.x, shared.y)
    - tally[candidateIndex]++
 3. ZKP② proof 생성 (`tally.circom`, snarkjs)
 4. DB:
@@ -92,22 +92,19 @@
 
 ```json
 {
-  "sharedKeys": ["...", "...", ...],   // 길이 = TALLY_CIRCUIT_VOTES
-  "nonces": ["...", "...", ...],
-  "ciphertexts": ["...", "...", ...],
-  "adminResult": ["42", "31", "18"]    // 길이 = TALLY_CIRCUIT_CANDIDATES
+  "coordPriv": "...",                  // 비밀 입력 (회로가 coordPub 와 짝인지 검증)
+  "coordPubX": "...", "coordPubY": "...",
+  "ciphertexts": ["...", ...],          // 길이 = TALLY_CIRCUIT_VOTES (50)
+  "ephPubX": ["...", ...],
+  "ephPubY": ["...", ...],
+  "adminResult": ["2", "1", "3", "0", "0"]   // 길이 = TALLY_CIRCUIT_CANDIDATES (5)
 }
 ```
+공개 신호 157개: `[coordPubX, coordPubY, ciphertext[50], ephPubX[50], ephPubY[50], result[5]]`
 
 ### 패딩 정책
-실제 투표 수가 `TALLY_CIRCUIT_VOTES` (기본 10) 미만이면 **dummy 로 자동 패딩**.
-
-기본 dummy: `sharedKey=0, nonce=0, ciphertext=0`. 회로 spec 에 맞춰 환경변수로 조정 가능:
-```env
-TALLY_PAD_SHAREDKEY=0
-TALLY_PAD_NONCE=0
-TALLY_PAD_CIPHERTEXT=0
-```
+실제 투표 수가 `TALLY_CIRCUIT_VOTES` 미만이면 `ciphertext=0, ephPub=(0,1)` (BabyJubJub 항등원) 로 패딩.
+컨트랙트 `recordTally` 도 같은 값을 요구한다 (규약 고정, 환경변수 조정 없음).
 
 투표 수가 회로 사이즈를 **초과**하면 에러 (회로 자체를 더 큰 사이즈로 빌드해야 함).
 

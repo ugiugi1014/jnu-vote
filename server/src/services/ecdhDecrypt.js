@@ -1,143 +1,108 @@
-// ECDH (P-256) + Poseidon 스트림 복호화 모듈
-// 프론트의 ecdhService.js + poseidonService.js 와 호환되는 백엔드 구현
+// BabyJubJub ECDH + Poseidon 키스트림 복호화 모듈
+// 프론트 ecdhService.js(encryptVote) 및 circuits/tally.circom 과 동일한 계산.
 //
 // 흐름:
-//   1) 코디네이터 개인키 + 투표자 공개키 → ECDH 공유키 도출
-//   2) keystream = Poseidon(sharedKey, nonce)
-//   3) candidateID = ciphertext XOR keystream
+//   1) shared = coordPriv * ephPub        (BabyJubJub ECDH)
+//   2) keystream = Poseidon(shared.x, shared.y)
+//   3) candidateId = ciphertext - keystream (mod p)
+//
+// 키 형식:
+//   coord_private_key (DB) : 10진수 문자열 스칼라
+//   coord_public_key  (DB) : JSON 문자열 {"x": "...", "y": "..."}
+//   체인 voterPublicKey    : abi.encode(uint256 ephPubX, uint256 ephPubY)
+//   체인 encryptedData     : abi.encode(uint256 ciphertext)
 
-const { webcrypto } = require("crypto");
-const { buildPoseidon } = require("circomlibjs");
+const crypto = require("crypto");
+const { buildBabyjub, buildPoseidon } = require("circomlibjs");
 const { ethers } = require("ethers");
 
-// circomlibjs Poseidon 인스턴스 (싱글톤)
+const SNARK_FIELD =
+  21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
+let babyjubPromise = null;
 let poseidonPromise = null;
-async function getPoseidon() {
-  if (!poseidonPromise) {
-    poseidonPromise = buildPoseidon();
+const getBabyjub = () => (babyjubPromise ??= buildBabyjub());
+const getPoseidon = () => (poseidonPromise ??= buildPoseidon());
+
+function randomScalar(subOrder) {
+  for (;;) {
+    const v = BigInt("0x" + crypto.randomBytes(32).toString("hex")) % subOrder;
+    if (v !== 0n) return v;
   }
-  return poseidonPromise;
 }
 
-// JWK 가 문자열로 저장돼 있으면 파싱
-function parseJWK(input) {
-  if (!input) throw new Error("JWK 키가 비어있습니다.");
-  if (typeof input === "string") {
-    try {
-      return JSON.parse(input);
-    } catch (err) {
-      throw new Error(`JWK 파싱 실패: ${err.message}`);
-    }
+function parsePoint(input) {
+  if (!input) throw new Error("공개키가 비어있습니다.");
+  const obj = typeof input === "string" ? JSON.parse(input) : input;
+  if (obj.x === undefined || obj.y === undefined) {
+    throw new Error("공개키 형식 오류 ({x, y} 필요)");
   }
-  return input;
+  return { x: BigInt(obj.x), y: BigInt(obj.y) };
 }
 
-// 코디네이터 ECDH 키쌍 생성 (선거 생성 시 호출)
+// 코디네이터 키쌍 생성 (선거 생성 시 호출)
 async function generateCoordKeyPair() {
-  const keyPair = await webcrypto.subtle.generateKey(
-    { name: "ECDH", namedCurve: "P-256" },
-    true, // extractable — 개인키 export 위해 필요
-    ["deriveBits"]
-  );
-
-  const publicKey = await webcrypto.subtle.exportKey("jwk", keyPair.publicKey);
-  const privateKey = await webcrypto.subtle.exportKey("jwk", keyPair.privateKey);
-
+  const babyjub = await getBabyjub();
+  const F = babyjub.F;
+  const priv = randomScalar(babyjub.subOrder);
+  const pub = babyjub.mulPointEscalar(babyjub.Base8, priv);
   return {
-    publicKeyJWK: JSON.stringify(publicKey),
-    privateKeyJWK: JSON.stringify(privateKey),
+    publicKey: JSON.stringify({
+      x: F.toObject(pub[0]).toString(),
+      y: F.toObject(pub[1]).toString(),
+    }),
+    privateKey: priv.toString(),
   };
-}
-
-// ECDH 공유키 도출 → BigInt 변환 (프론트 exportSharedKeyAsBigInt 와 동일)
-async function deriveSharedKeyBigInt(coordPrivKeyJWK, voterPubKeyJWK) {
-  const privJWK = parseJWK(coordPrivKeyJWK);
-  const pubJWK = parseJWK(voterPubKeyJWK);
-
-  const privKey = await webcrypto.subtle.importKey(
-    "jwk",
-    privJWK,
-    { name: "ECDH", namedCurve: "P-256" },
-    false,
-    ["deriveBits"]
-  );
-
-  const pubKey = await webcrypto.subtle.importKey(
-    "jwk",
-    pubJWK,
-    { name: "ECDH", namedCurve: "P-256" },
-    false,
-    []
-  );
-
-  const bits = await webcrypto.subtle.deriveBits(
-    { name: "ECDH", public: pubKey },
-    privKey,
-    256 // 32바이트
-  );
-
-  const buf = new Uint8Array(bits);
-  const hex = Array.from(buf)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return BigInt("0x" + hex);
 }
 
 // 단일 투표 복호화
-// 입력: { ciphertext, nonce } (BigInt string), 코디네이터 개인키 JWK, 투표자 공개키 JWK
-// 출력: { candidateId, sharedKey, nonce, ciphertext } (전부 string/number)
-async function decryptVote({ ciphertext, nonce }, coordPrivKey, voterPubKey) {
-  if (ciphertext === undefined || nonce === undefined) {
-    throw new Error("ciphertext, nonce 필수");
-  }
-
-  const sharedKey = await deriveSharedKeyBigInt(coordPrivKey, voterPubKey);
-
+// 입력: { ciphertext }, 코디네이터 개인키(10진수 문자열), 투표자 임시 공개키 {x, y}
+// 출력: { candidateId (유효 범위 밖이면 -1), ciphertext, ephPubX, ephPubY }
+async function decryptVote({ ciphertext }, coordPrivKey, ephPub) {
+  if (ciphertext === undefined) throw new Error("ciphertext 필수");
+  const babyjub = await getBabyjub();
   const poseidon = await getPoseidon();
-  const hash = poseidon([sharedKey, BigInt(nonce)]);
-  const keystream = poseidon.F.toObject(hash);
+  const F = babyjub.F;
 
-  const candidateId = Number(BigInt(ciphertext) ^ keystream);
+  const priv = BigInt(coordPrivKey);
+  const p = parsePoint(ephPub);
+  const shared = babyjub.mulPointEscalar([F.e(p.x), F.e(p.y)], priv);
+  const keystream = poseidon.F.toObject(
+    poseidon([F.toObject(shared[0]), F.toObject(shared[1])])
+  );
+
+  const ct = BigInt(ciphertext);
+  const raw = (((ct - keystream) % SNARK_FIELD) + SNARK_FIELD) % SNARK_FIELD;
+  const candidateId = raw < 256n ? Number(raw) : -1;
 
   return {
     candidateId,
-    sharedKey: sharedKey.toString(),
-    nonce: BigInt(nonce).toString(),
-    ciphertext: BigInt(ciphertext).toString(),
+    ciphertext: ct.toString(),
+    ephPubX: p.x.toString(),
+    ephPubY: p.y.toString(),
   };
 }
 
-// 체인의 encryptedData (bytes) → { ciphertext, nonce } 파싱
-// 프론트(VoteDetailPage)·컨트랙트(VotingSystem.recordTally)와 동일하게
-// abi.encode(uint256 ciphertext, uint256 nonce) 형식으로 디코딩한다.
+// 체인 encryptedData (bytes) → { ciphertext }
 function parseEncryptedData(encryptedData) {
-  if (!encryptedData) {
-    throw new Error("encryptedData 비어있음");
-  }
-  const [ciphertext, nonce] = ethers.AbiCoder.defaultAbiCoder().decode(
-    ["uint256", "uint256"],
-    encryptedData
-  );
-  return { ciphertext: ciphertext.toString(), nonce: nonce.toString() };
+  if (!encryptedData) throw new Error("encryptedData 비어있음");
+  const [ciphertext] = ethers.AbiCoder.defaultAbiCoder().decode(["uint256"], encryptedData);
+  return { ciphertext: ciphertext.toString() };
 }
 
-// 투표자 공개키 (bytes 또는 JSON 문자열) → JWK 객체
+// 체인 voterPublicKey (bytes) → { x, y }
 function parseVoterPublicKey(input) {
-  if (!input) {
-    throw new Error("voter_public_key 비어있음");
-  }
+  if (!input) throw new Error("voter_public_key 비어있음");
   if (typeof input === "string" && input.startsWith("0x")) {
-    return JSON.parse(ethers.toUtf8String(input));
+    const [x, y] = ethers.AbiCoder.defaultAbiCoder().decode(["uint256", "uint256"], input);
+    return { x: x.toString(), y: y.toString() };
   }
-  if (typeof input === "string") {
-    return JSON.parse(input);
-  }
-  return input;
+  return parsePoint(input);
 }
 
 module.exports = {
+  SNARK_FIELD,
   generateCoordKeyPair,
-  deriveSharedKeyBigInt,
   decryptVote,
   parseEncryptedData,
   parseVoterPublicKey,

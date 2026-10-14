@@ -6,13 +6,14 @@
 
 ```
 [프론트]
-  1. GET /elections/:id/coordinator/public-key   ← 코디네이터 공개키
-  2. ECDH 키쌍 생성 → 공유키 도출 → 개인키 폐기
-  3. Poseidon 으로 candidateID 암호화 → { ciphertext, nonce }
-  4. ZKP① proof + nullifier 생성 (vote.circom)
-  5. 컨트랙트 VotingSystem.castVote(nullifier, encryptedData, voterPubKey) 호출
-     · encryptedData = ethers.toUtf8Bytes(JSON.stringify({ ciphertext, nonce }))
-     · voterPubKey = ethers.toUtf8Bytes(JSON.stringify(voterPublicJWK))
+  1. 체인 VotingSystem.coordPubX / coordPubY / numCandidates 조회   ← 코디네이터 공개키 (BabyJubJub)
+  2. 임시 키 ephPriv 생성 → ephPub = ephPriv*Base8, shared = ephPriv*coordPub
+  3. ciphertext = candidateID + Poseidon(shared.x, shared.y)   (mod p)
+  4. ZKP① proof + nullifier 생성 (voteProof.circom, Web Worker)
+     · 암호문이 등록된 코디네이터 키로 유효 후보(0..numCandidates-1)를 암호화한 것임을 증명
+  5. 컨트랙트 VotingSystem.castVote(nullifier, encryptedData, voterPubKey, pA, pB, pC) 호출
+     · encryptedData = abi.encode(uint256 ciphertext)
+     · voterPubKey   = abi.encode(uint256 ephPubX, uint256 ephPubY)
      · 트랜잭션 성공 → tx hash 받음
   6. POST /vote/confirm 으로 tx 검증 요청
 
@@ -103,15 +104,16 @@ function castVote(
 ## 데이터 형식 합의 (프론트 ↔ 백엔드)
 
 ### `encryptedData` (체인 저장)
-- 프론트: `ethers.toUtf8Bytes(JSON.stringify({ ciphertext, nonce }))`
-- 백엔드: `ethers.toUtf8String(bytes)` → `JSON.parse` → `{ ciphertext, nonce }` (BigInt string)
+- 프론트: `abi.encode(uint256 ciphertext)`
+- 백엔드: `abi.decode(["uint256"])` → `{ ciphertext }`
 
 ### `voterPubKey` (체인 저장)
-- 프론트: `ethers.toUtf8Bytes(JSON.stringify(voterPublicJWK))`
-- 백엔드: `ethers.toUtf8String(bytes)` → `JSON.parse` → JWK 객체
+- 프론트: `abi.encode(uint256 ephPubX, uint256 ephPubY)` (BabyJubJub 임시 공개키)
+- 백엔드: `abi.decode(["uint256","uint256"])` → `{ x, y }`
 
 ### `voter_public_key` (DB 저장, `POST /vote/confirm` 으로 받음)
-- 프론트→백엔드: JWK 객체를 JSON.stringify 한 문자열
+- 프론트→백엔드: `JSON.stringify({ x, y })`
 - 백엔드 DB: TEXT 컬럼에 그대로 저장
+- ※ voters 행(학번/지갑)과 임시 공개키가 한 행에 묶여 서버가 "누가 누구에게"를 복원할 수 있다 -> 3단계(머클 트리 + relayer)에서 제거 예정
 
 > 두 경로(체인 / DB) 모두 같은 voter_public_key 가 들어가야 함. 개표 시 체인 데이터를 우선 참조.

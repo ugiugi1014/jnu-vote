@@ -3,97 +3,90 @@ pragma circom 2.0.0;
 include "../node_modules/circomlib/circuits/poseidon.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";
 include "../node_modules/circomlib/circuits/comparators.circom";
+include "../node_modules/circomlib/circuits/escalarmulfix.circom";
+include "../node_modules/circomlib/circuits/escalarmulany.circom";
 
+// 집계 유효성 증명 (ZKP ②)
+// 공유키를 비공개 입력으로 받지 않고, 코디네이터 개인키로 회로 안에서 직접 계산한다.
+//   1) coordPub = coordPriv * Base8      -> 체인에 등록된 공개키의 진짜 개인키임을 증명
+//   2) shared_i = coordPriv * ephPub_i   -> 공유키를 임의로 바꿀 수 없음 (표 누락/조작 차단)
+//   3) candidateId_i = ciphertext_i - Poseidon(shared_i.x, shared_i.y)
+//   4) 실제 표는 정확히 한 후보로 복호화되어야 함, 패딩 슬롯(ephPubX = 0)은 0표
+//   5) 후보별 합계 == adminResult
 template Tally(n, numCandidates) {
     // 비밀 입력
-    signal input sharedKeys[n];
+    signal input coordPriv;
 
     // 공개 입력
-    signal input nonces[n];
+    signal input coordPubX;
+    signal input coordPubY;
     signal input ciphertexts[n];
+    signal input ephPubX[n];
+    signal input ephPubY[n];
     signal input adminResult[numCandidates];
 
-    // 내부 신호
-    signal keystreams[n];
-    signal xorBits[n][254];
+    var BASE8[2] = [
+        5299619240641551281634865583518297030282874472190772894086521144482721001553,
+        16950150798460657717958625567821834550301663161624707787222815936182638968203
+    ];
+
+    // 1. 코디네이터 키 검증
+    component privBits = Num2Bits(253);
+    privBits.in <== coordPriv;
+    component pubMul = EscalarMulFix(253, BASE8);
+    for (var b = 0; b < 253; b++) {
+        pubMul.e[b] <== privBits.out[b];
+    }
+    pubMul.out[0] === coordPubX;
+    pubMul.out[1] === coordPubY;
+
     signal candidateIds[n];
     signal votes[n][numCandidates];
-    signal tally[numCandidates];
-    signal tallyAcc[numCandidates][n+1];
-    signal validCount[n][numCandidates+1];
-    signal isPad[n];
+    signal validCount[n][numCandidates + 1];
+    signal tallyAcc[numCandidates][n + 1];
 
-    // 컴포넌트 선언
-    component pos[n];
-    component n2b_ks[n];
-    component n2b_ct[n];
-    component b2n[n];
+    component shared[n];
+    component ks[n];
     component eq[n][numCandidates];
-    component zNonce[n];
-    component zCt[n];
+    component isPad[n];
 
     for (var i = 0; i < n; i++) {
-        // 1. keystream 재구성
-        pos[i] = Poseidon(2);
-        pos[i].inputs[0] <== sharedKeys[i];
-        pos[i].inputs[1] <== nonces[i];
-        keystreams[i] <== pos[i].out;
-
-        // 2. 비트 분해
-        // Num2Bits(254)는 x와 x+p 두 가지 비트 분해를 허용(aliasing)하므로
-        // 증명자가 다른 분해를 골라 복호화 결과를 바꿀 수 있다 -> strict 버전 사용
-        n2b_ks[i] = Num2Bits_strict();
-        n2b_ks[i].in <== keystreams[i];
-
-        n2b_ct[i] = Num2Bits_strict();
-        n2b_ct[i].in <== ciphertexts[i];
-
-        // 3. XOR (254비트 전체)
-        for (var b = 0; b < 254; b++) {
-            xorBits[i][b] <== n2b_ct[i].out[b] + n2b_ks[i].out[b]
-                             - 2 * n2b_ct[i].out[b] * n2b_ks[i].out[b];
+        // 2. 공유점 재계산
+        shared[i] = EscalarMulAny(253);
+        for (var b = 0; b < 253; b++) {
+            shared[i].e[b] <== privBits.out[b];
         }
+        shared[i].p[0] <== ephPubX[i];
+        shared[i].p[1] <== ephPubY[i];
 
-        // 4. 비트 재조합
-        b2n[i] = Bits2Num(254);
-        for (var b = 0; b < 254; b++) {
-            b2n[i].in[b] <== xorBits[i][b];
-        }
-        candidateIds[i] <== b2n[i].out;
+        // 3. 복호화
+        ks[i] = Poseidon(2);
+        ks[i].inputs[0] <== shared[i].out[0];
+        ks[i].inputs[1] <== shared[i].out[1];
+        candidateIds[i] <== ciphertexts[i] - ks[i].out;
 
-        // 5. 후보별 득표 집계
+        // 4. 후보 판별 + 무결성
+        isPad[i] = IsZero();
+        isPad[i].in <== ephPubX[i];
+        validCount[i][0] <== 0;
         for (var c = 0; c < numCandidates; c++) {
             eq[i][c] = IsEqual();
             eq[i][c].in[0] <== candidateIds[i];
             eq[i][c].in[1] <== c;
             votes[i][c] <== eq[i][c].out;
+            validCount[i][c + 1] <== validCount[i][c] + votes[i][c];
         }
-
-        // 6. 무결성: 실제 표는 반드시 후보 0~(numCandidates-1) 중 하나로 복호화되어야 한다.
-        //    (관리자가 잘못된 공유키를 넣어 표를 버리는 공격 차단)
-        //    패딩 슬롯(nonce=0, ciphertext=0)만 어느 후보에도 해당하지 않을 수 있다.
-        zNonce[i] = IsZero();
-        zNonce[i].in <== nonces[i];
-        zCt[i] = IsZero();
-        zCt[i].in <== ciphertexts[i];
-        isPad[i] <== zNonce[i].out * zCt[i].out;
-
-        validCount[i][0] <== 0;
-        for (var c = 0; c < numCandidates; c++) {
-            validCount[i][c+1] <== validCount[i][c] + votes[i][c];
-        }
-        validCount[i][numCandidates] === 1 - isPad[i];
+        validCount[i][numCandidates] === 1 - isPad[i].out;
     }
 
-    // 7. 득표 합산 및 관리자 집계 결과와 비교
+    // 5. 합산 및 비교
     for (var c = 0; c < numCandidates; c++) {
         tallyAcc[c][0] <== 0;
         for (var i = 0; i < n; i++) {
-            tallyAcc[c][i+1] <== tallyAcc[c][i] + votes[i][c];
+            tallyAcc[c][i + 1] <== tallyAcc[c][i] + votes[i][c];
         }
-        tally[c] <== tallyAcc[c][n];
-        tally[c] === adminResult[c];
+        tallyAcc[c][n] === adminResult[c];
     }
 }
 
-component main {public [nonces, ciphertexts, adminResult]} = Tally(50, 5);
+component main {public [coordPubX, coordPubY, ciphertexts, ephPubX, ephPubY, adminResult]} = Tally(50, 5);

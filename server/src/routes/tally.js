@@ -22,13 +22,6 @@ router.post("/:id/tally", auth, adminOnly, async (req, res) => {
   try {
     const result = await performTally(req.params.id);
 
-    if (result.recordTallyError) {
-      return res.status(200).json({
-        message: "개표 완료 (DB) — 체인 기록 실패. recordTally 재시도 필요.",
-        ...result,
-      });
-    }
-
     return res.json({
       message: "개표 완료 + ZKP proof 생성 + 체인 기록 완료",
       ...result,

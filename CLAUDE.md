@@ -9,7 +9,7 @@
 
 ## 기술 스택
 
-- 프론트: React + Vite, ethers.js, Web Crypto API(ECDH P-256), circomlibjs(Poseidon), snarkjs(Groth16)
+- 프론트: React + Vite, ethers.js, circomlibjs(BabyJubJub ECDH, Poseidon), snarkjs(Groth16, Web Worker)
 - 백엔드: Node.js + Express, MySQL (mysql2 pool, `db.getConnection()` 트랜잭션)
 - 컨트랙트: Solidity, ElectionFactory(EIP-1167 clone), VotingSystem, VotingToken(soulbound ERC20), verifier 2종(VoteVerifier/TallyVerifier)
 - ZKP: Circom 2.x + snarkjs, Groth16. voteProof.circom / tally.circom
@@ -19,8 +19,8 @@
 
 ```
 blockchain/contracts/   ElectionFactory.sol, VotingSystem.sol, VotingToken.sol,
-                        TallyVerifier.sol(uint[105]), VoteVerifier.sol(uint[1]), mocks/
-circuits/               voteProof.circom (VoteProof(50)), tally.circom (Tally(50,5))
+                        TallyVerifier.sol(uint[157]), VoteVerifier.sol(uint[7]), mocks/
+circuits/               voteProof.circom (VoteProof()), tally.circom (Tally(50,5)), test/babyjub_e2e.mjs
 server/src/
   index.js              Express 엔트리. /elections 마운트, /api prefix 호환
   routes/               auth.js elections.js voter.js vote.js verification.js tally.js
@@ -40,8 +40,11 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
 
 - 인앱 지갑: `privateKey = HKDF(webmail + serverSecret)`. localStorage 없음, 로그인 시마다 동일 지갑 복원. 개인키는 브라우저 메모리에만. (createWallet은 `{address, privateKey, wallet(ethers.Wallet)}` 래퍼 반환 — VoteDetailPage는 `new ethers.Wallet(wallet.privateKey)`로 사용)
 - `secret = Poseidon(walletPrivateKey, electionID)` (프론트 zkpService). `nullifier = Poseidon(secret)` (voteProof.circom 내부).
-- 코디네이터 ECDH 키: 선거 생성 시 자동 생성, `elections.coord_private_key`(DB). 개표 후 NULL 폐기. ADMIN_WALLET_PRIVATE_KEY(컨트랙트 서명용)와 별개.
-- 투표 암호화: 임시 ECDH 키쌍 → 코디 공개키와 공유키 도출 → `keystream=Poseidon(공유키,nonce)` → `암호문 = candidateID XOR keystream`.
+- 코디네이터 키(BabyJubJub): 선거 생성 시 자동 생성. `coord_private_key`=10진수 스칼라(DB), `coord_public_key`=JSON {x,y}. 선거 시작 시 `configureElection(x, y, numCandidates)`로 체인 고정. 개표(체인 기록 성공) 후 NULL 폐기. ADMIN_WALLET_PRIVATE_KEY(컨트랙트 서명용)와 별개.
+- 투표 암호화: 임시 키 ephPriv → `ephPub = ephPriv*Base8`, `shared = ephPriv*coordPub` → `ciphertext = candidateID + Poseidon(shared.x, shared.y)` (mod p). nonce 없음(임시 키가 매번 새로움).
+- ZKP①(voteProof): nullifier + 후보 범위 + **암호문이 등록된 코디 키로 유효 후보를 암호화한 것**까지 증명. 공개 신호 7개 `[nullifier, numCandidates, coordPubX, coordPubY, ciphertext, ephPubX, ephPubY]`.
+- ZKP②(tally): 공유키를 입력으로 받지 않고 **회로 안에서 coordPriv*ephPub 로 계산**, coordPub=coordPriv*Base8 검증, 실제 표는 반드시 유효 후보 하나로 복호화. → 관리자가 표를 버리거나 옮길 수 없음.
+- 프론트 증명 생성은 `src/workers/voteProofWorker.js` (Web Worker). 회로 파일은 투표 화면 진입 시 미리 로드.
 - **익명성/이중투표 실질 보장**: nullifier가 walletPrivateKey 기반이라 "다른 지갑=다른 nullifier". KDF로 1인=1지갑이므로, 1인1표는 **학번당 토큰 1개 + soulbound burn**이 핵심. nullifier 매핑은 같은 nullifier 재사용 차단(방어 심화).
 
 ## 토큰 모델
@@ -53,18 +56,18 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
 
 ---
 
-## 회로/검증자 사이즈 (50,5) — pubSignals 105
+## 회로/검증자 사이즈 (50,5) — tally pubSignals 157
 
-tally.circom: `Tally(50, 5)`. public 순서 = nonces[50] → ciphertexts[50] → adminResult[5] = **105개**.
-VotingSystem.sol recordTally(uint[105]) / TallyVerifier(uint[105]) 기대:
-- pubSignals[0..49] == nonce[i]
-- pubSignals[50..99] == ciphertext[i]
-- pubSignals[100..104] == voteCounts[c]
-→ voteCounts와 adminResult 둘 다 c=0..4 동일 순서·값. 후보 3명이면 index 3,4는 0 패딩.
+| 회로 | constraints | 공개 신호 | 필요 ptau |
+|---|---|---|---|
+| voteProof | 3,554 | 7 | 2^12 |
+| tally (50,5) | 128,426 | 157 | 2^17 |
 
-관련 상수 통일: `.env` TALLY_CIRCUIT_VOTES=50 / TALLY_CIRCUIT_CANDIDATES=5, zkpServices 기본값 50/5, tallyService publicSignals 105·TALLY_CANDIDATES=5, votingContract recordTally uint[105], elections.js candidate_index 0~4(bulk≤5).
+tally public 순서 = coordPubX, coordPubY → ciphertexts[50] → ephPubX[50] → ephPubY[50] → adminResult[5].
+VotingSystem.recordTally(uint[157]) 가 저장된 표/키와 하나씩 대조. 패딩 슬롯 = (ciphertext 0, ephPub (0,1)).
+TallyVerifier(157 입력) 런타임 바이트코드 약 16.3KB (24KB 한도 이내), 검증 가스 약 1.27M.
 
-패딩 더미표(sharedKey=nonce=ciphertext=0): 회로에서 candidateId=Poseidon(0,0)XOR0=거대값 → 후보 0~4에 안 잡혀 집계 0. 안전.
+관련 상수: `.env` TALLY_CIRCUIT_VOTES=50 / TALLY_CIRCUIT_CANDIDATES=5, tallyService publicSignals 157, votingContract recordTally uint[157], elections.js candidate_index 0~4.
 
 ---
 
@@ -72,14 +75,15 @@ VotingSystem.sol recordTally(uint[105]) / TallyVerifier(uint[105]) 기대:
 
 전제: **MetaMask 배포 계정 = server/.env ADMIN_WALLET_PRIVATE_KEY 지갑** (Factory owner여야 deploy onlyOwner 통과). 개인키는 64hex(주소 아님).
 
-1. VoteVerifier.sol 배포(생성자 인자 없음, value 0) → 주소 A
-2. TallyVerifier.sol(uint[105]) 배포 → 주소 B  (※ uint[1050]짜리 옛 버전은 24KB 한도 초과로 배포 불가)
+0. **ZKP 키 재생성 (회로 변경 시)**: 공개 ptau(Hermez powersOfTau28_hez_final_17.ptau 등)로 voteProof/tally zkey 생성 → verifier export. 레포의 voteProof_final.zkey / VoteVerifier.sol 은 개발용 로컬 셋업이므로 실제 운영 전 반드시 교체.
+1. VoteVerifier.sol(uint[7]) 배포(생성자 인자 없음, value 0) → 주소 A
+2. TallyVerifier.sol(uint[157]) 배포 → 주소 B
 3. VotingToken impl 배포 → C
 4. VotingSystem impl 배포 → D
 5. ElectionFactory(D, C, A, B) 배포 → F  (검증자 주소가 immutable로 clone에 주입됨)
 6. `server/.env` FACTORY_ADDRESS = F
 7. VotingSystem.sol 컴파일 ABI 전체를 front/user/src/abi/VotingSystem.json에 교체 (드롭다운에서 VotingSystem 선택 — Groth16Verifier 아님)
-8. tally 산출물(zkp/build/tally_js wasm, zkp/keys/tally_final.zkey, tally_verification_key.json)이 (50,5)인지 확인
+8. tally 산출물(zkp/build/tally_js wasm, zkp/keys/tally_final.zkey, tally_verification_key.json)이 새 회로(157 공개 신호)인지 확인
 
 배포 후: AdminPage `POST /:id/deploy` → Factory.createElection → VotingSystem+VotingToken clone + 주소 자동 등록.
 

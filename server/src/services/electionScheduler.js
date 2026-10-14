@@ -20,15 +20,9 @@ async function runAutoTally(electionId) {
   try {
     const result = await performTally(electionId);
 
-    if (result.recordTallyError) {
-      console.warn(
-        `[scheduler] election ${electionId} 자동 개표: DB는 tallied 됐으나 체인 기록 실패 — 관리자 수동 재시도 필요. (${result.recordTallyError})`
-      );
-    } else {
-      console.log(
-        `[scheduler] election ${electionId} 자동 개표 완료 (tx=${result.tallyTxHash})`
-      );
-    }
+    console.log(
+      `[scheduler] election ${electionId} 자동 개표 완료 (tx=${result.tallyTxHash})`
+    );
   } catch (err) {
     // 사전 조건 미달 (contract_address 없음, 투표 데이터 없음 등) 은 정상 케이스로 간주
     if (err.statusCode === 400 || err.statusCode === 404) {

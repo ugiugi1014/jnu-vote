@@ -4,7 +4,7 @@
 //   RPC_URL: 이더리움 RPC 엔드포인트 (Sepolia 등)
 //   ADMIN_WALLET_PRIVATE_KEY: 백엔드가 컨트랙트 호출에 쓰는 관리자 지갑 개인키
 //                              (issueTokenBatch, recordTally 등 onlyOwner/onlyElectionAdmin 호출용)
-//                              ※ 흐름도의 "코디네이터 ECDH 키"와는 별개.
+//                              ※ 흐름도의 "코디네이터 BabyJubJub 키"와는 별개.
 //                                ECDH 키는 elections.coord_private_key (DB) 에 보관됨.
 //
 // require 시점에 즉시 초기화하지 않음 — 환경변수 없어도 모듈 로드는 성공.
@@ -16,7 +16,11 @@ const votingSystemAbi = [
   "function getAllVotes() view returns (tuple(bytes encryptedData, bytes voterPublicKey)[])",
   "function getTotalVotes() view returns (uint256)",
   "function getVoteCount(uint256 candidateId) view returns (uint256)",
-  "function recordTally(uint256[] candidateIds, uint256[] voteCounts, uint[2] pA, uint[2][2] pB, uint[2] pC, uint[105] pubSignals) external",
+  "function recordTally(uint256[] candidateIds, uint256[] voteCounts, uint[2] pA, uint[2][2] pB, uint[2] pC, uint[157] pubSignals) external",
+  "function configureElection(uint256 coordPubX, uint256 coordPubY, uint256 numCandidates) external",
+  "function coordPubX() view returns (uint256)",
+  "function coordPubY() view returns (uint256)",
+  "function numCandidates() view returns (uint256)",
   "function openElection() external",
   "function closeElection() external",
   "function electionOpen() view returns (bool)",

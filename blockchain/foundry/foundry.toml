@@ -1,0 +1,17 @@
+# Foundry 테스트 (hardhat 테스트와 별도). 실제 Groth16 증명으로 castVote / recordTally 를 검증한다.
+#   cd blockchain/foundry
+#   forge install foundry-rs/forge-std --no-git   (최초 1회, lib/forge-std 생성)
+#   (blockchain/ 에서 npm install 로 @openzeppelin 설치되어 있어야 함)
+#   forge test -vv
+[profile.default]
+src = "../contracts"
+test = "test"
+out = "out"
+libs = ["lib", "../node_modules"]
+solc = "0.8.28"
+fs_permissions = [{ access = "read", path = "./fixtures" }]
+remappings = [
+  "@openzeppelin/=../node_modules/@openzeppelin/",
+  "forge-std/=lib/forge-std/src/",
+  "jnu/=../contracts/",
+]

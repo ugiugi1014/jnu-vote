@@ -94,14 +94,15 @@ router.post("/", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: "종료 시간은 시작 시간보다 늦어야 합니다." });
     }
 
-    // 코디네이터 ECDH 키쌍 자동 생성 (개표 시 복호화용)
+    // 코디네이터 BabyJubJub 키쌍 자동 생성 (개표 시 복호화 + tally 증명용)
+    // public: JSON {"x","y"}, private: 10진수 스칼라 문자열
     const { generateCoordKeyPair } = require("../services/ecdhDecrypt");
-    const { publicKeyJWK, privateKeyJWK } = await generateCoordKeyPair();
+    const { publicKey: coordPublicKey, privateKey: coordPrivateKey } = await generateCoordKeyPair();
 
     const [result] = await db.query(
       `INSERT INTO elections (title, description, start_time, end_time, coord_public_key, coord_private_key)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [title, description || null, start_time, end_time, publicKeyJWK, privateKeyJWK]
+      [title, description || null, start_time, end_time, coordPublicKey, coordPrivateKey]
     );
 
     scheduleElectionClose({ id: result.insertId, end_time });
@@ -109,7 +110,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
     res.json({
       message: "선거 생성 완료",
       election_id: result.insertId,
-      coord_public_key: publicKeyJWK,
+      coord_public_key: coordPublicKey,
     });
   } catch (err) {
     console.error(err);
@@ -172,7 +173,8 @@ router.get("/:id", async (req, res) => {
 =====================================================
   3-1) 코디네이터 공개키 조회 (투표 시 ECDH용)
   GET /elections/:id/coordinator/public-key
-  응답: JWK 객체 (kty, crv, x, y)
+  응답: { x, y } (BabyJubJub 점, 10진수 문자열)
+  ※ 프론트는 체인의 VotingSystem.coordPubX/Y 를 우선 사용한다 (서버 신뢰 불필요).
 =====================================================
 */
 router.get("/:id/coordinator/public-key", async (req, res) => {
@@ -192,10 +194,10 @@ router.get("/:id/coordinator/public-key", async (req, res) => {
       return res.status(404).json({ message: "코디네이터 공개키 미생성" });
     }
 
-    // DB 에는 JSON 문자열로 저장됨 — JWK 객체로 파싱해서 반환
+    // DB 에는 JSON 문자열로 저장됨 — {x, y} 객체로 파싱해서 반환
     try {
-      const jwk = JSON.parse(rows[0].coord_public_key);
-      return res.json(jwk);
+      const point = JSON.parse(rows[0].coord_public_key);
+      return res.json(point);
     } catch (parseErr) {
       return res.status(500).json({ message: "공개키 파싱 실패", error: parseErr.message });
     }
@@ -301,8 +303,23 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: "contract_address, token_contract_address 등록 후 시작 가능" });
     }
 
+    // 후보 수 = 최대 candidate_index + 1 (voteProof 가 0..numCandidates-1 범위만 허용)
+    const [candRows] = await db.query(
+      `SELECT MAX(candidate_index) AS maxIndex, COUNT(*) AS cnt FROM candidates WHERE election_id=?`,
+      [electionId]
+    );
+    const numCandidates = candRows[0].cnt > 0 ? Number(candRows[0].maxIndex) + 1 : 0;
+    if (numCandidates < 1 || numCandidates > 5) {
+      return res.status(400).json({ message: "후보는 1~5명(candidate_index 0~4)이어야 시작할 수 있습니다." });
+    }
+    if (!election.coord_public_key) {
+      return res.status(400).json({ message: "코디네이터 공개키 없음" });
+    }
+    const coordPub = JSON.parse(election.coord_public_key);
+
     const { ethers } = require("ethers");
     const VOTING_SYSTEM_ABI = [
+      "function configureElection(uint256 coordPubX, uint256 coordPubY, uint256 numCandidates) external",
       "function openElection() external",
     ];
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
@@ -312,6 +329,9 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
       VOTING_SYSTEM_ABI,
       adminWallet
     );
+    // 코디네이터 공개키·후보 수를 체인에 고정 -> 이후 voteProof/tally 증명이 이 값과 대조됨
+    const configTx = await votingSystem.configureElection(BigInt(coordPub.x), BigInt(coordPub.y), numCandidates);
+    await configTx.wait();
     const tx = await votingSystem.openElection();
     await tx.wait();
     
