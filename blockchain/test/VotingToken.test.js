@@ -15,12 +15,15 @@ async function deployVotingTokenViaFactory(deployer, electionAdmin, electionId =
     const systemImpl = await VotingSystem.connect(deployer).deploy();
     const voteVerifier = await MockVoteVerifier.connect(deployer).deploy();
     const tallyVerifier = await MockTallyVerifier.connect(deployer).deploy();
+    const PoseidonHasher = await hre.ethers.getContractFactory("PoseidonHasher");
+    const hasher = await PoseidonHasher.connect(deployer).deploy();
 
     const factory = await ElectionFactory.connect(deployer).deploy(
         await systemImpl.getAddress(),
         await tokenImpl.getAddress(),
         await voteVerifier.getAddress(),
-        await tallyVerifier.getAddress()
+        await tallyVerifier.getAddress(),
+        await hasher.getAddress()
     );
 
     const tx = await factory.connect(deployer).createElection(electionId, electionAdmin.address);

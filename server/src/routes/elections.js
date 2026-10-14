@@ -775,8 +775,7 @@ router.get("/:id/me", auth, async (req, res) => {
               COALESCE(uv.status, 'none') AS verification_status,
               uv.note AS verification_note,
               uv.reviewed_at AS verified_at,
-              v.token_issued_at,
-              v.has_voted,
+              v.commitment_registered_at,
               v.created_at
        FROM voters v
        LEFT JOIN user_verifications uv ON uv.email = v.email
@@ -971,12 +970,10 @@ router.get("/:id/voters", auth, adminOnly, async (req, res) => {
       `SELECT v.id, v.election_id, v.email,
               COALESCE(uv.student_id, v.student_id) AS student_id,
               us.wallet_address,
-              v.voter_public_key,
               COALESCE(uv.status, 'none') AS verification_status,
               uv.note AS verification_note,
               uv.reviewed_at AS verified_at,
-              v.token_issued_at,
-              v.has_voted,
+              v.commitment_registered_at,
               v.created_at
        FROM voters v
        LEFT JOIN user_verifications uv ON uv.email = v.email
@@ -1080,139 +1077,138 @@ router.get("/:id/result", async (req, res) => {
   }
 });
 
+// 유권자 자격 확인 (my-eligibility / register-commitment 공용)
+// 반환: { ok: true, election, voter } | { ok: false, status, reason }
+async function checkVoterEligibility(conn, electionId, email, allowedStatuses) {
+  const [electionRows] = await conn.query(
+    `SELECT id, status, contract_address FROM elections WHERE id=?`,
+    [electionId]
+  );
+  if (electionRows.length === 0) return { ok: false, status: 404, reason: "election_not_found" };
+  const election = electionRows[0];
+  if (!allowedStatuses.includes(election.status)) return { ok: false, status: 200, reason: "election_not_active" };
+  if (!election.contract_address) return { ok: false, status: 200, reason: "contract_not_deployed" };
+
+  // election_student_list 에서 명단 확인 (학번 기준)
+  const [listRows] = await conn.query(
+    `SELECT esl.student_id
+     FROM election_student_list esl
+     JOIN user_verifications uv ON uv.student_id = esl.student_id
+     WHERE esl.election_id = ? AND uv.email = ?`,
+    [electionId, email]
+  );
+  if (listRows.length === 0) return { ok: false, status: 200, reason: "not_in_voter_list" };
+
+  const [voterRows] = await conn.query(
+    `SELECT v.id, v.commitment_registered_at,
+            us.wallet_address,
+            COALESCE(uv.status, 'none') AS verification_status
+     FROM user_verifications uv
+     LEFT JOIN user_secrets us ON us.email = uv.email
+     LEFT JOIN voters v ON v.email = uv.email AND v.election_id = ?
+     WHERE uv.email = ?`,
+    [electionId, email]
+  );
+  let voter = voterRows[0] || null;
+  if (!voter || voter.verification_status !== "approved") return { ok: false, status: 200, reason: "not_verified" };
+  if (!voter.wallet_address) return { ok: false, status: 200, reason: "wallet_not_registered" };
+
+  if (!voter.id) {
+    await conn.query(
+      `INSERT INTO voters (election_id, email, student_id, wallet_address, verification_status, verified_at)
+       VALUES (?, ?, ?, ?, 'approved', NOW())
+       ON DUPLICATE KEY UPDATE
+         student_id = VALUES(student_id),
+         wallet_address = COALESCE(VALUES(wallet_address), wallet_address),
+         verification_status = 'approved',
+         verified_at = COALESCE(verified_at, NOW())`,
+      [electionId, email, listRows[0].student_id, voter.wallet_address]
+    );
+    const [createdRows] = await conn.query(
+      `SELECT id, commitment_registered_at FROM voters WHERE election_id = ? AND email = ?`,
+      [electionId, email]
+    );
+    voter = { ...voter, ...createdRows[0] };
+  }
+  return { ok: true, election, voter };
+}
+
 /*
 =====================================================
   GET /elections/:id/my-eligibility
-  - 자격 확인 + 토큰 없으면 lazy 발급
-  - 응답: { eligible: true } | { eligible: false, reason: string }
+  - 자격 확인 + 유권자 트리 등록 여부
+  - 응답: { eligible: true, registered: bool, contract_address } | { eligible: false, reason }
+  ※ 익명 투표 전환: 서버는 누가 투표했는지 모른다 (has_voted 없음). 토큰·가스 발급 없음 (relayer 가 제출).
 =====================================================
 */
 router.get("/:id/my-eligibility", auth, async (req, res) => {
   const conn = await db.getConnection();
   try {
-    const electionId = req.params.id;
-    const email = req.user.email;
-
-    // 1. 선거 존재 + active 확인
-    const [electionRows] = await conn.query(
-      `SELECT id, status, contract_address, token_contract_address
-       FROM elections WHERE id=?`,
-      [electionId]
-    );
-
-    if (electionRows.length === 0) {
-      return res.status(404).json({ eligible: false, reason: "election_not_found" });
-    }
-
-    const election = electionRows[0];
-
-    if (election.status !== ELECTION_STATUS.ACTIVE) {
-      return res.json({ eligible: false, reason: "election_not_active" });
-    }
-
-    // 2. election_student_list에서 명단 확인 (학번 기준)
-    const [listRows] = await conn.query(
-      `SELECT esl.student_id
-      FROM election_student_list esl
-      JOIN user_verifications uv ON uv.student_id = esl.student_id
-      WHERE esl.election_id = ? AND uv.email = ?`,
-      [electionId, email]
-    );
-
-    if (listRows.length === 0) {
-      return res.json({ eligible: false, reason: "not_in_voter_list" });
-    }
-
-    // 3. voters에서 인증+지갑+투표 상태 확인
-    const [voterRows] = await conn.query(
-      `SELECT v.id, v.token_issued_at, v.has_voted,
-              us.wallet_address,
-              COALESCE(uv.status, 'none') AS verification_status
-       FROM user_verifications uv
-       LEFT JOIN user_secrets us ON us.email = uv.email
-       LEFT JOIN voters v ON v.email = uv.email AND v.election_id = ?
-       WHERE uv.email = ?`,
-      [electionId, email]
-    );
-
-    // voters에 아직 행이 없으면 (미로그인 상태에서 명단만 등록된 케이스) — wallet 없음으로 처리
-    let voter = voterRows[0] || null;
-
-    // 재학 인증 미완료
-    if (!voter || voter.verification_status !== "approved") {
-      return res.json({ eligible: false, reason: "not_verified" });
-    }
-
-    // 지갑 미등록
-    if (!voter.wallet_address) {
-      return res.json({ eligible: false, reason: "wallet_not_registered" });
-    }
-
-    if (!voter.id) {
-      await conn.query(
-        `INSERT INTO voters (election_id, email, student_id, wallet_address, verification_status, verified_at)
-         VALUES (?, ?, ?, ?, 'approved', NOW())
-         ON DUPLICATE KEY UPDATE
-           student_id = VALUES(student_id),
-           wallet_address = COALESCE(VALUES(wallet_address), wallet_address),
-           verification_status = 'approved',
-           verified_at = COALESCE(verified_at, NOW())`,
-        [electionId, email, listRows[0].student_id, voter.wallet_address]
-      );
-
-      const [createdRows] = await conn.query(
-        `SELECT id, token_issued_at, has_voted, ? AS wallet_address, 'approved' AS verification_status
-         FROM voters
-         WHERE election_id = ? AND email = ?`,
-        [voter.wallet_address, electionId, email]
-      );
-      voter = createdRows[0];
-    }
-
-    // 이미 투표함
-    if (voter.has_voted) {
-      return res.json({ eligible: false, reason: "already_voted" });
-    }
-
-    // 토큰 이미 있으면 바로 통과 (단, 가스 부족 시 보충 — castVote 가스 보장)
-    if (voter.token_issued_at) {
-      const { fundVoterGas } = require("../blockchain/votingContract");
-      await fundVoterGas([voter.wallet_address]);
-      return res.json({ eligible: true });
-    }
-    
-    // 4. 토큰 없으면 lazy 발급
-    if (!election.token_contract_address) {
-      return res.json({ eligible: false, reason: "token_contract_not_set" });
-    }
-
-    const { ethers } = require("ethers");
-
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-    const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
-    const tokenContract = new ethers.Contract(
-      election.token_contract_address,
-      VOTING_TOKEN_ABI,
-      adminWallet
-    );
-
-    const tx = await tokenContract.issueTokenBatch([voter.wallet_address]);
-    await tx.wait();
-
-    await conn.query(
-      `UPDATE voters SET token_issued_at=NOW() WHERE election_id=? AND email=?`,
-      [electionId, email]
-    );
-
-    // 토큰 발급과 함께 가스(ETH)도 발급
-    const { fundVoterGas } = require("../blockchain/votingContract");
-    await fundVoterGas([voter.wallet_address]);
-
-    return res.json({ eligible: true });
-
+    const r = await checkVoterEligibility(conn, req.params.id, req.user.email, [ELECTION_STATUS.ACTIVE]);
+    if (!r.ok) return res.status(r.status).json({ eligible: false, reason: r.reason });
+    return res.json({
+      eligible: true,
+      registered: !!r.voter.commitment_registered_at,
+      contract_address: r.election.contract_address,
+    });
   } catch (err) {
     console.error("my-eligibility 오류:", err);
     res.status(500).json({ eligible: false, reason: "server_error" });
+  } finally {
+    conn.release();
+  }
+});
+
+/*
+=====================================================
+  POST /elections/:id/register-commitment
+  { "commitment": "1234..." }   // Poseidon(secret), secret 은 학생 브라우저에만 있음
+  - 자격(명단·재학인증·지갑) 확인 후 VotingSystem.registerVoter(commitment) 호출
+  - 학생 1명당 선거마다 1번만 (재등록을 허용하면 commitment 2개로 2번 투표 가능)
+  - pending(시작 전) / active 상태에서 가능. 일찍 등록할수록 익명성 집합이 커진다.
+=====================================================
+*/
+router.post("/:id/register-commitment", auth, async (req, res) => {
+  const FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+  const conn = await db.getConnection();
+  try {
+    const { commitment } = req.body || {};
+    if (typeof commitment !== "string" || !/^[0-9]{1,78}$/.test(commitment)) {
+      return res.status(400).json({ message: "commitment 형식 오류 (10진수 문자열)" });
+    }
+    const c = BigInt(commitment);
+    if (c === 0n || c >= FIELD) return res.status(400).json({ message: "commitment 범위 오류" });
+
+    await conn.beginTransaction();
+    const r = await checkVoterEligibility(conn, req.params.id, req.user.email, [ELECTION_STATUS.PENDING, ELECTION_STATUS.ACTIVE]);
+    if (!r.ok) {
+      await conn.rollback();
+      return res.status(r.status === 200 ? 403 : r.status).json({ message: "등록 불가", reason: r.reason });
+    }
+
+    // 동시 요청으로 두 번 등록되지 않도록 행 잠금
+    const [lockRows] = await conn.query(
+      `SELECT commitment_registered_at FROM voters WHERE id = ? FOR UPDATE`,
+      [r.voter.id]
+    );
+    if (lockRows[0]?.commitment_registered_at) {
+      await conn.rollback();
+      return res.status(409).json({ message: "이미 이 선거에 등록되었습니다.", reason: "already_registered" });
+    }
+
+    const { getVotingContract } = require("../blockchain/votingContract");
+    const contract = getVotingContract(r.election.contract_address);
+    const tx = await contract.registerVoter(c);
+    await tx.wait();
+
+    await conn.query(`UPDATE voters SET commitment_registered_at = NOW() WHERE id = ?`, [r.voter.id]);
+    await conn.commit();
+    // ※ commitment 값은 DB 에 저장하지 않는다 (체인에만 존재)
+    return res.json({ message: "등록 완료", txHash: tx.hash });
+  } catch (err) {
+    try { await conn.rollback(); } catch (_) {}
+    console.error("register-commitment 오류:", err.message);
+    res.status(500).json({ message: "등록 실패" });
   } finally {
     conn.release();
   }

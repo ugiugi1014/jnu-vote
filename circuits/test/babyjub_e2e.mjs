@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
 import { encryptVote } from "../../front/user/src/services/ecdhService.js";
+import { createSecret, computeCommitment, buildMerkleProof } from "../../front/user/src/services/voterIdService.js";
 const require = createRequire(import.meta.url);
 const { generateCoordKeyPair, decryptVote } = require("../../server/src/services/ecdhDecrypt.js");
 const { buildTallyBatchInputs } = require("../../server/src/services/zkpServices.js");
@@ -28,19 +29,29 @@ const coordPub = JSON.parse(publicKey);
 const numCandidates = 3;
 const secretBase = 123456789n;
 
-// ---- voteProof ----
+// ---- voteProof (익명: 머클 트리 포함 증명) ----
+const scope = 0xf5ba21691a8bc011b7b430854b41d5be0b78b938n;   // 선거 컨트랙트 주소
+const mem = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) }; };
+const secrets = Array.from({ length: 9 }, () => createSecret("0xelection", mem()));
+const commitments = await Promise.all(secrets.map(computeCommitment));
 const ids = [0, 2, 1, 1, 0, 2, 2];
 const ballots = [];
 for (let i = 0; i < ids.length; i++) {
   const e = await encryptVote(ids[i], coordPub);
   ballots.push(e);
+  const mp = await buildMerkleProof(commitments, commitments[i]);
   const input = {
-    secret: secretBase + BigInt(i), candidateId: ids[i], ephPriv: e.ephPriv,
-    numCandidates, coordPubX: coordPub.x, coordPubY: coordPub.y,
+    secret: secrets[i], pathElements: mp.pathElements, pathIndices: mp.pathIndices,
+    candidateId: ids[i], ephPriv: e.ephPriv,
+    merkleRoot: mp.root, scope, numCandidates, coordPubX: coordPub.x, coordPubY: coordPub.y,
     ciphertext: e.ciphertext, ephPubX: e.ephPubX, ephPubY: e.ephPubY,
   };
   if (i === 0) {
-    await check("voteProof", "honest ballot", input, true);
+    await check("voteProof", "honest ballot (registered voter)", input, true);
+    const outsider = createSecret("0xelection", mem());
+    await check("voteProof", "unregistered secret with a real path", { ...input, secret: outsider }, false);
+    await check("voteProof", "wrong merkle root", { ...input, merkleRoot: mp.root + 1n }, false);
+    await check("voteProof", "tampered path element", { ...input, pathElements: mp.pathElements.map((v, k) => (k === 3 ? v + 1n : v)) }, false);
     await check("voteProof", "ciphertext encrypts a different candidate", { ...input, ciphertext: (e.ciphertext + 1n) % P }, false);
     const out = await encryptVote(7, coordPub);
     await check("voteProof", "candidate out of range (7 >= numCandidates)", { ...input, candidateId: 7, ciphertext: out.ciphertext, ephPriv: out.ephPriv, ephPubX: out.ephPubX, ephPubY: out.ephPubY }, false);

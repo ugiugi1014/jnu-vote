@@ -14,6 +14,10 @@ const { ethers } = require("ethers");
 
 const votingSystemAbi = [
   "function getAllVotes() view returns (tuple(bytes encryptedData, bytes voterPublicKey)[])",
+  "function registerVoter(uint256 commitment) external",
+  "function castVote(bytes32 nullifier, uint256 merkleRoot, bytes encryptedData, bytes voterPubKey, uint[2] pA, uint[2][2] pB, uint[2] pC) external",
+  "function getLastRoot() view returns (uint256)",
+  "function getCommitments() view returns (uint256[])",
   "function getTotalVotes() view returns (uint256)",
   "function getVoteCount(uint256 candidateId) view returns (uint256)",
   "function recordTallyBatch(uint256 batchIndex, uint256[] candidateIds, uint256[] voteCounts, uint[2] pA, uint[2][2] pB, uint[2] pC, uint[160] pubSignals) external",

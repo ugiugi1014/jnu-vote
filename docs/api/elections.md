@@ -262,3 +262,19 @@ pending → active → closed → tallied
 **권한**: admin
 
 **활용**: 단일 후보 삭제용. 선거 수정 화면에서 후보 전체를 바꿀 때는 `PUT /elections/:id/candidates/bulk` 사용 권장.
+
+
+---
+
+## `GET /elections/:id/my-eligibility` (익명 투표 전환 후)
+
+**권한**: 로그인. **응답**: `{ eligible: true, registered: boolean, contract_address }` 또는 `{ eligible: false, reason }`
+(reason: `election_not_active`, `contract_not_deployed`, `not_in_voter_list`, `not_verified`, `wallet_not_registered`)
+토큰·가스 발급 없음, `already_voted` 없음 (서버는 누가 투표했는지 모름).
+
+## `POST /elections/:id/register-commitment`
+
+**권한**: 로그인. **본문**: `{ "commitment": "<10진수 문자열>" }` — `Poseidon(secret)`, secret 은 학생 브라우저에만 있음.
+자격 확인 후 `VotingSystem.registerVoter(commitment)` 호출. 선거 상태 pending / active 에서 가능.
+**응답**: 200 `{ message, txHash }` / 409 `already_registered` (학생 1명당 선거별 1회) / 403 자격 없음 / 400 형식 오류.
+DB 에는 `voters.commitment_registered_at` 만 기록하고 commitment 값은 저장하지 않는다.

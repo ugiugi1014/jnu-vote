@@ -781,7 +781,7 @@ function VoterSection({ token }) {
 
       <div className="admin-page-header" style={{ marginTop: 8 }}>
         <h2>선거별 유권자</h2>
-        <p>선택한 선거의 토큰 발급, 투표 여부, 지갑 등록 상태를 확인합니다.</p>
+        <p>선택한 선거의 유권자 트리 등록 여부와 지갑 등록 상태를 확인합니다. (익명 투표라 개인별 투표 여부는 알 수 없습니다)</p>
       </div>
 
       <div className="toolbar" style={{ alignItems: "flex-start", gap: 8 }}>
@@ -811,8 +811,7 @@ function VoterSection({ token }) {
               <th>학번</th>
               <th>인증</th>
               <th>지갑</th>
-              <th>토큰</th>
-              <th>투표</th>
+              <th>투표 키 등록</th>
             </tr>
           </thead>
           <tbody>
@@ -822,11 +821,10 @@ function VoterSection({ token }) {
                 <td>{voter.student_id || "-"}</td>
                 <td>{VERIFICATION_LABEL[voter.verification_status] || voter.verification_status}</td>
                 <td>{voter.wallet_address ? `${voter.wallet_address.slice(0, 8)}...${voter.wallet_address.slice(-6)}` : "미등록"}</td>
-                <td>{voter.token_issued_at ? "발급" : "미발급"}</td>
-                <td>{voter.has_voted ? "완료" : "미투표"}</td>
+                <td>{voter.commitment_registered_at ? "등록" : "미등록"}</td>
               </tr>
             ))}
-            {filteredVoters.length === 0 && <EmptyRow colSpan={6}>선택한 선거의 유권자 정보가 없습니다.</EmptyRow>}
+            {filteredVoters.length === 0 && <EmptyRow colSpan={5}>선택한 선거의 유권자 정보가 없습니다.</EmptyRow>}
           </tbody>
         </table>
       </div>

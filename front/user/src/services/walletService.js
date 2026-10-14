@@ -51,24 +51,7 @@ export async function getBalance(provider, address) {
   return ethers.formatEther(balance);
 }
 
-// 컨트랙트 호출 (투표)
-export async function castVote(connectedWallet, contractAddress, abi, nullifier, encryptedData, voterPubKey, proof) {
-  const contract = new ethers.Contract(contractAddress, abi, connectedWallet);
-  const tx = await contract.castVote(
-    nullifier,
-    encryptedData,
-    voterPubKey,
-    proof.pi_a.slice(0, 2).map(BigInt),
-    // pi_b inner pair swap (snarkjs exportSolidityCallData 규약과 동일)
-    [
-      [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
-      [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
-    ],
-    proof.pi_c.slice(0, 2).map(BigInt)
-  );
-  await tx.wait();
-  return tx;
-}
+// (투표 제출은 익명 투표 전환 후 relayer(/vote/relay)가 담당 — 학생 지갑으로 castVote 하지 않음)
 
 // walletPrivateKey → BigInt 변환 (ZKP 입력용)
 export function privateKeyToBigInt(privateKey) {

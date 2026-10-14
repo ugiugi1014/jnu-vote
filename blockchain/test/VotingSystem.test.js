@@ -49,8 +49,9 @@ describe("VotingSystem", function () {
             await deployVotingTokenViaFactory(deployer, electionAdmin));
 
         // 토큰 있는 유권자 2명 (voter1, voter3)
-        await token.connect(electionAdmin).issueToken(voter1.address);
-        await token.connect(electionAdmin).issueToken(voter3.address);
+        // 익명 투표: 유권자 commitment 2개 등록 (투표는 누구든 relayer 로 제출)
+        await system.connect(electionAdmin).registerVoter(111);
+        await system.connect(electionAdmin).registerVoter(222);
     });
 
     // ───────────── 선거 관리자 설정 ─────────────
@@ -111,45 +112,43 @@ describe("VotingSystem", function () {
 
     // ───────────── 투표 ─────────────
 
-    it("토큰 있는 유권자가 선거 중 투표 가능", async function () {
+    it("등록된 선거에서 relayer(아무 주소)가 투표 제출 가능 — 토큰 불필요", async function () {
         await openConfigured();
-        await system.connect(voter1).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
+        await system.connect(other).castVote(dummyNullifier, await system.getLastRoot(), dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
         expect(await system.getTotalVotes()).to.equal(1);
     });
 
-    it("castVote 성공 시 토큰 1개가 burn 된다 (soulbound)", async function () {
-        await openConfigured();
-        expect(await token.balanceOf(voter1.address)).to.equal(1);
-        await system.connect(voter1).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
-        expect(await token.balanceOf(voter1.address)).to.equal(0);
-    });
-
-    it("토큰 없는 유권자는 투표 불가", async function () {
+    it("알 수 없는 merkle root 면 투표 불가", async function () {
         await openConfigured();
         await expect(
-            system.connect(voter2).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
-        ).to.be.reverted;
+            system.connect(other).castVote(dummyNullifier, 12345, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
+        ).to.be.revertedWith("unknown merkle root");
+    });
+
+    it("유권자 등록은 관리자만, 같은 commitment 중복 등록 불가", async function () {
+        await expect(system.connect(other).registerVoter(333)).to.be.revertedWith("only election admin");
+        await expect(system.connect(electionAdmin).registerVoter(111)).to.be.revertedWith("commitment already registered");
     });
 
     it("선거가 열리지 않으면 투표 불가", async function () {
         await expect(
-            system.connect(voter1).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
+            system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
         ).to.be.reverted;
     });
 
     it("이중 투표 불가 (nullifier 재사용 방지)", async function () {
         await openConfigured();
-        await system.connect(voter1).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
+        await system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
         await expect(
-            system.connect(voter3).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
+            system.connect(voter3).castVote(dummyNullifier, await system.getLastRoot(), dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
         ).to.be.reverted;
     });
 
     it("다른 nullifier 면 다른 유권자도 투표 가능", async function () {
         const nullifier2 = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("secret2"));
         await openConfigured();
-        await system.connect(voter1).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
-        await system.connect(voter3).castVote(nullifier2, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
+        await system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
+        await system.connect(voter3).castVote(nullifier2, await system.getLastRoot(), dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC);
         expect(await system.getTotalVotes()).to.equal(2);
     });
 
@@ -157,7 +156,7 @@ describe("VotingSystem", function () {
         await voteVerifier.setShouldVerify(false);
         await openConfigured();
         await expect(
-            system.connect(voter1).castVote(dummyNullifier, dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
+            system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), dummyEncrypted, dummyPubKey, dummyPA, dummyPB, dummyPC)
         ).to.be.reverted;
     });
 
@@ -247,14 +246,14 @@ describe("VotingSystem", function () {
     it("형식이 깨진 암호문은 castVote 단계에서 거절된다 (개표 DoS 방지)", async function () {
         await openConfigured();
         await expect(
-            system.connect(voter1).castVote(dummyNullifier, hre.ethers.toUtf8Bytes("garbage"), dummyPubKey, dummyPA, dummyPB, dummyPC)
+            system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), hre.ethers.toUtf8Bytes("garbage"), dummyPubKey, dummyPA, dummyPB, dummyPC)
         ).to.be.reverted;
     });
 
     it("임시 공개키 x=0 (패딩 표식)은 거절된다", async function () {
         await openConfigured();
         await expect(
-            system.connect(voter1).castVote(dummyNullifier, enc(5), pub(0, 1), dummyPA, dummyPB, dummyPC)
+            system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), enc(5), pub(0, 1), dummyPA, dummyPB, dummyPC)
         ).to.be.revertedWith("invalid ephemeral key");
     });
 
@@ -262,15 +261,15 @@ describe("VotingSystem", function () {
         const P = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
         await openConfigured();
         await expect(
-            system.connect(voter1).castVote(dummyNullifier, enc(P), dummyPubKey, dummyPA, dummyPB, dummyPC)
+            system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), enc(P), dummyPubKey, dummyPA, dummyPB, dummyPC)
         ).to.be.revertedWith("value out of field");
     });
 
     it("득표 합계가 투표 수와 다르면 recordTallyBatch 실패 (표 누락 차단)", async function () {
         await openConfigured();
-        await system.connect(voter1).castVote(dummyNullifier, enc(7), pub(9, 11), dummyPA, dummyPB, dummyPC);
+        await system.connect(voter1).castVote(dummyNullifier, await system.getLastRoot(), enc(7), pub(9, 11), dummyPA, dummyPB, dummyPC);
         const n2 = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("secret2"));
-        await system.connect(voter3).castVote(n2, enc(8), pub(10, 12), dummyPA, dummyPB, dummyPC);
+        await system.connect(voter3).castVote(n2, await system.getLastRoot(), enc(8), pub(10, 12), dummyPA, dummyPB, dummyPC);
         await system.connect(electionAdmin).closeElection();
         const votes = [{ ct: 7, x: 9, y: 11 }, { ct: 8, x: 10, y: 12 }];
         const ids = [0, 1, 2, 3, 4];

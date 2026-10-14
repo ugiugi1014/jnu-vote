@@ -42,12 +42,13 @@ CREATE TABLE voters (
   email            VARCHAR(100) NOT NULL,  -- @stu.jejunu.ac.kr
   student_id       VARCHAR(20),             -- 학생증 인증용 학번
   wallet_address   VARCHAR(42),            -- 인앱 지갑 주소 (인증 완료 후 저장)
-  voter_public_key TEXT,                   -- ECDH 공개키 (투표 제출 시 저장, 개표에 사용)
+  voter_public_key TEXT,                   -- (사용 안 함: 익명 투표 전환 후 학번-표 연결 방지)
   verification_status ENUM('none', 'pending', 'approved', 'rejected') DEFAULT 'none',
   verification_note TEXT,
   verified_at      DATETIME,
   token_issued_at  DATETIME,
-  has_voted        BOOLEAN      DEFAULT FALSE,
+  has_voted        BOOLEAN      DEFAULT FALSE,   -- (사용 안 함: 서버는 누가 투표했는지 모름)
+  commitment_registered_at DATETIME,           -- 유권자 트리 등록 시각 (commitment 값은 체인에만)
   created_at       DATETIME     DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
   UNIQUE KEY uq_voter (election_id, email)

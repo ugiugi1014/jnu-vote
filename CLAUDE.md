@@ -1,7 +1,7 @@
 # jnu-vote — 프로젝트 컨텍스트 (Claude Code용)
 
 제주대학교 캡스톤. 블록체인 기반 익명 전자투표. 이더리움 Sepolia 테스트넷.
-**상태: E2E 해피패스 + 음성 케이스 통과 (2026-06-07).** tally 회로는 **(50,5)** 운영.
+**상태: E2E 해피패스 + 음성 케이스 통과 (2026-06-07).** 2026-10 보완: 집계 무결성(1단계) → BabyJubJub 회로 내 ECDH(2단계) → 익명 투표(3단계, 머클 트리 + relayer) → 배치 집계(4단계, 표 수 제한 없음). 각 단계 설명은 Change.md.
 
 핵심 가치: 익명성(누가 누굴 뽑았는지 복원 불가), 검증가능성(ZKP), 위변조 저항(이중투표·집계조작 차단).
 
@@ -11,7 +11,7 @@
 
 - 프론트: React + Vite, ethers.js, circomlibjs(BabyJubJub ECDH, Poseidon), snarkjs(Groth16, Web Worker)
 - 백엔드: Node.js + Express, MySQL (mysql2 pool, `db.getConnection()` 트랜잭션)
-- 컨트랙트: Solidity, ElectionFactory(EIP-1167 clone), VotingSystem, VotingToken(soulbound ERC20), verifier 2종(VoteVerifier/TallyVerifier)
+- 컨트랙트: Solidity, ElectionFactory(EIP-1167 clone), VotingSystem(유권자 머클 트리 포함), PoseidonHasher(온체인 Poseidon), VotingToken(익명 전환 후 투표에 미사용), verifier 2종(VoteVerifier/TallyVerifier)
 - ZKP: Circom 2.x + snarkjs, Groth16. voteProof.circom / tally.circom
 - 외부: KICA(doculink) 재학증명 진위확인, OCR(Gemini/Ollama)
 
@@ -19,7 +19,7 @@
 
 ```
 blockchain/contracts/   ElectionFactory.sol, VotingSystem.sol, VotingToken.sol,
-                        TallyVerifier.sol(uint[160]), VoteVerifier.sol(uint[7]), mocks/
+                        TallyVerifier.sol(uint[160]), VoteVerifier.sol(uint[9]), PoseidonHasher.sol, mocks/
 circuits/               voteProof.circom (VoteProof()), tally.circom (Tally(50,5)), test/babyjub_e2e.mjs
 server/src/
   index.js              Express 엔트리. /elections 마운트, /api prefix 호환
@@ -29,7 +29,8 @@ server/src/
   db/                   MySQL pool, schema.sql
 front/user/             Vite React 앱 (※ front/user 하위가 실제 앱)
   src/pages/            LoginPage VoteListPage VoteDetailPage VoteResultPage UploadPage AdminPage
-  src/services/         walletService.js ecdhService.js zkpService.js poseidonService.js crypto.js
+  src/services/         walletService.js ecdhService.js zkpService.js voterIdService.js
+  src/workers/          voteProofWorker.js (증명 생성 Web Worker)
   src/abi/              VotingSystem.json / VotingToken.json / ElectionFactory.json (배포 기준 전체 배열)
   public/               voteProof.wasm, voteProof_final.zkey (프론트 vote proof 아티팩트)
 zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build/tally_js/, keys/tally_verification_key.json)
@@ -39,21 +40,25 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
 ## 키 설계 (요약)
 
 - 인앱 지갑: `privateKey = HKDF(webmail + serverSecret)`. localStorage 없음, 로그인 시마다 동일 지갑 복원. 개인키는 브라우저 메모리에만. (createWallet은 `{address, privateKey, wallet(ethers.Wallet)}` 래퍼 반환 — VoteDetailPage는 `new ethers.Wallet(wallet.privateKey)`로 사용)
-- `secret = Poseidon(walletPrivateKey, electionID)` (프론트 zkpService). `nullifier = Poseidon(secret)` (voteProof.circom 내부).
+- **익명 신원 (3단계)**: 투표 화면 첫 진입 시 브라우저가 랜덤 `secret` 생성 → localStorage(`jnu-vote:voter-secret:<선거주소>`)에만 저장 → `commitment = Poseidon(secret)` 만 `POST /elections/:id/register-commitment` 로 전송 → 서버가 학번·자격 확인 후 `VotingSystem.registerVoter(commitment)` (학생 1명당 선거별 1회, DB 에는 등록 시각만, commitment 값은 체인에만). 컨트랙트가 깊이 16 증분 머클 트리(Poseidon) 유지, 최근 root 30개 인정.
+- `nullifier = Poseidon(secret, scope)`, scope = 선거 컨트랙트 주소 (선거 간 연결 불가). 지갑 개인키 기반 secret 은 서버가 재계산 가능해서 제거.
+- 투표 제출은 **relayer**: 프론트가 증명을 `POST /vote/relay` 로 **로그인 토큰 없이** 보내고, 서버 관리자 지갑이 castVote (staticCall 로 사전 검증 후 전송). 학생 지갑·토큰·가스 불필요. `/vote/confirm`(학번-표 연결 저장)은 410.
 - 코디네이터 키(BabyJubJub): 선거 생성 시 자동 생성. `coord_private_key`=10진수 스칼라(DB), `coord_public_key`=JSON {x,y}. 선거 시작 시 `configureElection(x, y, numCandidates)`로 체인 고정. 개표(체인 기록 성공) 후 NULL 폐기. ADMIN_WALLET_PRIVATE_KEY(컨트랙트 서명용)와 별개.
 - 투표 암호화: 임시 키 ephPriv → `ephPub = ephPriv*Base8`, `shared = ephPriv*coordPub` → `ciphertext = candidateID + Poseidon(shared.x, shared.y)` (mod p). nonce 없음(임시 키가 매번 새로움).
-- ZKP①(voteProof): nullifier + 후보 범위 + **암호문이 등록된 코디 키로 유효 후보를 암호화한 것**까지 증명. 공개 신호 7개 `[nullifier, numCandidates, coordPubX, coordPubY, ciphertext, ephPubX, ephPubY]`.
+- ZKP①(voteProof): **유권자 트리 포함(누군지 비공개)** + nullifier + 후보 범위 + **암호문이 등록된 코디 키로 유효 후보를 암호화한 것**까지 증명. 공개 신호 9개 `[nullifier, merkleRoot, scope, numCandidates, coordPubX, coordPubY, ciphertext, ephPubX, ephPubY]`.
 - ZKP②(tally, **배치**): 공유키를 입력으로 받지 않고 **회로 안에서 coordPriv*ephPub 로 계산**, coordPub=coordPriv*Base8 검증, 실제 표는 반드시 유효 후보 하나로 복호화. → 관리자가 표를 버리거나 옮길 수 없음.
   표를 50개씩 배치로 나눠 배치마다 증명(**표 수 제한 없음**). 배치 사이에는 `Poseidon(누적득표[5], salt)` 커밋먼트만 이어지고 최종 득표는 마지막 배치에서만 공개. salt_k = Poseidon(coordPriv, k+1) (결정적 → 실패 후 재실행 시 체인에 기록된 배치부터 이어서 진행).
 - 프론트 증명 생성은 `src/workers/voteProofWorker.js` (Web Worker). 회로 파일은 투표 화면 진입 시 미리 로드.
-- **익명성/이중투표 실질 보장**: nullifier가 walletPrivateKey 기반이라 "다른 지갑=다른 nullifier". KDF로 1인=1지갑이므로, 1인1표는 **학번당 토큰 1개 + soulbound burn**이 핵심. nullifier 매핑은 같은 nullifier 재사용 차단(방어 심화).
+- **익명성/이중투표**: 1인1표 = 학번당 commitment 1개(서버가 등록 시 확인) + nullifier 중복 차단(컨트랙트). 서버는 누가 등록했는지는 알지만, 어떤 표가 어떤 commitment 인지는 모름. 남는 가정: relayer(=서버)가 요청 IP·시간으로 추측하지 않는다, 등록 직후 바로 투표하면 시점으로 추측될 여지(일찍 등록 권장).
+- secret 을 잃으면(브라우저 변경/기록 삭제) 그 선거엔 투표 불가 (재등록 허용 시 2표 가능해지므로 막음).
 
-## 토큰 모델
+## 자격 모델 (익명 투표 전환 후)
 
 자격 2층: **재학인증(전역, user_verifications)** + **선거자격(명단, election_student_list, 선거별)**.
-- 관리자가 학번 명단 업로드(`POST /:id/voters/bulk`) → election_student_list 생성(선거별), total_voters=명단수. 즉시발급 대상엔 토큰+가스 발급.
-- 미가입/신규는 투표 진입 시 lazy 발급(`GET /:id/my-eligibility`) — 토큰 발급과 함께 가스(ETH)도 발급.
-- castVote는 투표자 지갑이 직접 가스 지불 → `fundVoterGas`가 ADMIN_WALLET에서 가스 드립(잔액<VOTER_GAS_AMOUNT, 기본 0.002 ETH일 때만). 릴레이어 아님.
+- 관리자가 학번 명단 업로드(`POST /:id/voters/bulk`) → election_student_list 생성.
+- 학생은 투표 화면 진입 시 `GET /:id/my-eligibility`(자격 + 등록 여부) → 미등록이면 브라우저가 secret 생성 후 `POST /:id/register-commitment`.
+- 투표는 relayer 제출이라 토큰·가스 드립 불필요. (기존 issueToken/fundVoterGas 코드는 남아 있으나 투표 경로에서 사용하지 않음 — 정리 대상)
+- 관리자 유권자 목록은 "투표 키 등록 여부"만 표시 (개인별 투표 여부는 알 수 없음).
 
 ---
 
@@ -61,7 +66,7 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
 
 | 회로 | constraints | 공개 신호 | 필요 ptau |
 |---|---|---|---|
-| voteProof | 3,554 | 7 | 2^12 |
+| voteProof (머클 16) | 7,682 | 9 | 2^13 |
 | tally 배치 (50,5) | 129,140 | 160 | 2^17 |
 
 tally public 순서 = coordPubX, coordPubY → ciphertexts[50] → ephPubX[50] → ephPubY[50] → prevCommit → newCommit → isFinal → result[5].
@@ -78,13 +83,15 @@ VotingSystem.recordTallyBatch(batchIndex, ..., uint[160]) 가 배치 순서, 저
 전제: **MetaMask 배포 계정 = server/.env ADMIN_WALLET_PRIVATE_KEY 지갑** (Factory owner여야 deploy onlyOwner 통과). 개인키는 64hex(주소 아님).
 
 0. **ZKP 키 재생성 (회로 변경 시)**: 공개 ptau(Hermez powersOfTau28_hez_final_17.ptau 등)로 voteProof/tally zkey 생성 → verifier export. 레포의 voteProof_final.zkey / VoteVerifier.sol 은 개발용 로컬 셋업이므로 실제 운영 전 반드시 교체.
-1. VoteVerifier.sol(uint[7]) 배포(생성자 인자 없음, value 0) → 주소 A
+1. VoteVerifier.sol(uint[9]) 배포(생성자 인자 없음, value 0) → 주소 A
 2. TallyVerifier.sol(uint[160]) 배포 → 주소 B
 3. VotingToken impl 배포 → C
 4. VotingSystem impl 배포 → D
-5. ElectionFactory(D, C, A, B) 배포 → F  (검증자 주소가 immutable로 clone에 주입됨)
+4-1. PoseidonHasher.sol 배포 (생성자 인자 없음) → 주소 H
+5. ElectionFactory(D, C, A, B, H) 배포 → F  (검증자·해셔 주소가 immutable로 clone에 주입됨)
 6. `server/.env` FACTORY_ADDRESS = F
 7. VotingSystem.sol 컴파일 ABI 전체를 front/user/src/abi/VotingSystem.json에 교체 (드롭다운에서 VotingSystem 선택 — Groth16Verifier 아님)
+7-1. DB 마이그레이션 `server/src/db/migrations/20261014_anonymous_voting.sql` 적용 (voters.commitment_registered_at 추가, 기존 학번-표 연결 데이터 삭제)
 8. tally 산출물(zkp/build/tally_js wasm, zkp/keys/tally_final.zkey, tally_verification_key.json)이 새 회로(배치, 160 공개 신호)인지 확인
 
 배포 후: AdminPage `POST /:id/deploy` → Factory.createElection → VotingSystem+VotingToken clone + 주소 자동 등록.

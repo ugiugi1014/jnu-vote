@@ -13,7 +13,7 @@ contract MockVoteVerifier {
         uint[2] calldata,
         uint[2][2] calldata,
         uint[2] calldata,
-        uint[7] calldata
+        uint[9] calldata
     ) external view returns (bool) {
         return shouldVerify;
     }

@@ -11,6 +11,7 @@ contract ElectionFactory is Ownable {
     address public immutable votingTokenImpl;
     address public immutable voteVerifier;
     address public immutable tallyVerifier;
+    address public immutable poseidonHasher;
 
     struct DeployedElection {
         address votingSystem;
@@ -29,17 +30,20 @@ contract ElectionFactory is Ownable {
         address _votingSystemImpl,
         address _votingTokenImpl,
         address _voteVerifier,
-        address _tallyVerifier
+        address _tallyVerifier,
+        address _poseidonHasher
     ) Ownable(msg.sender) {
         require(_votingSystemImpl != address(0), "invalid VotingSystem implementation");
         require(_votingTokenImpl != address(0), "invalid VotingToken implementation");
         require(_voteVerifier != address(0), "invalid vote verifier");
         require(_tallyVerifier != address(0), "invalid tally verifier");
+        require(_poseidonHasher != address(0), "invalid poseidon hasher");
 
         votingSystemImpl = _votingSystemImpl;
         votingTokenImpl = _votingTokenImpl;
         voteVerifier = _voteVerifier;
         tallyVerifier = _tallyVerifier;
+        poseidonHasher = _poseidonHasher;
     }
 
     function createElection(
@@ -58,7 +62,8 @@ contract ElectionFactory is Ownable {
             electionAdmin,
             address(this),
             voteVerifier,
-            tallyVerifier
+            tallyVerifier,
+            poseidonHasher
         );
 
         VotingToken(votingToken).setVotingSystem(votingSystem);

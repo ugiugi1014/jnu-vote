@@ -1,86 +1,59 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-import "forge-std/Test.sol";
-import "jnu/ElectionFactory.sol";
-import "jnu/VotingSystem.sol";
-import "jnu/VotingToken.sol";
-import {Groth16Verifier as RealVoteVerifier} from "jnu/VoteVerifier.sol";
-import "jnu/mocks/MockTallyVerifier.sol";
+import "./RealBase.sol";
 
-// 프론트 코드 경로(encryptVote + generateVoteProof 입력 변환 + pi_b swap)로 만든 실제 증명을
-// 실제 VoteVerifier 와 VotingSystem.castVote 로 검증한다.
-contract RealVoteTest is Test {
-    VotingSystem sys; VotingToken tok;
-    address admin = address(0xA11CE);
-    string json;
+// 프론트 코드 경로(voterIdService + encryptVote + 워커 입력 변환 + pi_b swap)로 만든 실제 익명 투표 증명을
+// 실제 VoteVerifier + VotingSystem.castVote 로 검증. 제출은 relayer 주소 (토큰·학생 지갑 없음).
+contract RealVoteTest is RealBase {
+    function setUp() public { _deploy(); _registerAndOpen(); }
 
-    function setUp() public {
-        json = vm.readFile("fixtures/vote_e2e.json");
-        ElectionFactory f = new ElectionFactory(address(new VotingSystem()), address(new VotingToken()), address(new RealVoteVerifier()), address(new MockTallyVerifier()));
-        (address s, address t) = f.createElection(1, admin);
-        sys = VotingSystem(s); tok = VotingToken(t);
-        vm.startPrank(admin);
-        sys.configureElection(vm.parseJsonUint(json, ".coordPubX"), vm.parseJsonUint(json, ".coordPubY"), vm.parseJsonUint(json, ".numCandidates"));
-        sys.openElection();
-        vm.stopPrank();
+    function test_jsTreeMatchesOnChainTree() public view {
+        assertEq(sys.getLastRoot(), vm.parseJsonUint(vj, ".votes[0].root"), "JS merkle root != on-chain root");
+        assertEq(address(sys), vm.parseJsonAddress(vj, ".election"), "election address (scope) changed");
     }
 
-    struct P { uint[2] a; uint[2][2] b; uint[2] c; bytes enc; bytes pub; bytes32 nul; }
-
-    function _load(uint i, bool tamper) internal view returns (P memory p) {
-        string memory k = string.concat(".votes[", vm.toString(i), "]");
-        uint[] memory t = vm.parseJsonUintArray(json, string.concat(k, ".pA"));
-        p.a = [t[0], t[1]];
-        t = vm.parseJsonUintArray(json, string.concat(k, ".pB[0]"));
-        p.b[0] = [t[0], t[1]];
-        t = vm.parseJsonUintArray(json, string.concat(k, ".pB[1]"));
-        p.b[1] = [t[0], t[1]];
-        t = vm.parseJsonUintArray(json, string.concat(k, ".pC"));
-        p.c = [t[0], t[1]];
-        uint ct = vm.parseJsonUint(json, string.concat(k, ".ciphertext"));
-        p.enc = abi.encode(tamper ? ct + 1 : ct);
-        p.pub = abi.encode(vm.parseJsonUint(json, string.concat(k, ".ephPubX")), vm.parseJsonUint(json, string.concat(k, ".ephPubY")));
-        p.nul = bytes32(vm.parseJsonUint(json, string.concat(k, ".nullifier")));
-    }
-
-    function _vote(uint i, address v, bool tamper) internal returns (bool ok, uint gasUsed) {
-        P memory p = _load(i, tamper);
-        vm.prank(v);
-        uint g = gasleft();
-        try sys.castVote(p.nul, p.enc, p.pub, p.a, p.b, p.c) { ok = true; } catch { ok = false; }
-        gasUsed = g - gasleft();
-    }
-
-    function test_realProofsAccepted() public {
+    function test_realAnonymousVotesAccepted() public {
         for (uint i = 0; i < 3; i++) {
-            address v = address(uint160(0x5000 + i));
-            vm.prank(admin); tok.issueToken(v);
-            (bool ok, uint g) = _vote(i, v, false);
+            (bool ok, uint g) = _castFromFixture(i, false);
             assertTrue(ok, "real proof rejected");
-            emit log_named_uint("castVote gas (real Groth16 verify)", g);
+            emit log_named_uint("castVote gas (relayer, real proof, merkle 16)", g);
         }
         assertEq(sys.getTotalVotes(), 3);
     }
 
+    function test_doubleVoteRejected() public {
+        (bool ok,) = _castFromFixture(0, false); assertTrue(ok);
+        (ok,) = _castFromFixture(0, false); assertFalse(ok, "same nullifier accepted twice");
+    }
+
     function test_tamperedCiphertextRejected() public {
-        address v = address(0x6000);
-        vm.prank(admin); tok.issueToken(v);
-        (bool ok,) = _vote(0, v, true);
+        (bool ok,) = _castFromFixture(0, true);
         assertFalse(ok, "tampered ciphertext accepted");
     }
 
-    function test_wrongCoordinatorKeyRejected() public {
-        // 다른 키로 설정된 선거에서는 같은 증명이 통과하면 안 된다
-        ElectionFactory f = new ElectionFactory(address(new VotingSystem()), address(new VotingToken()), address(new RealVoteVerifier()), address(new MockTallyVerifier()));
-        (address s, address t) = f.createElection(2, admin);
-        sys = VotingSystem(s); tok = VotingToken(t);
+    function test_proofBoundToElection() public {
+        // 같은 증명을 다른 선거(다른 scope)에 내면 실패해야 한다
+        ElectionFactory f = new ElectionFactory(address(new VotingSystem()), address(new VotingToken()),
+            address(new RealVoteVerifier()), address(new RealTallyVerifier()), address(new PoseidonHasher()));
+        (address s,) = f.createElection(2, admin);
+        sys = VotingSystem(s);
+        _registerAndOpen();
+        (bool ok,) = _castFromFixture(0, false);
+        assertFalse(ok, "proof replayed in another election");
+    }
+
+    function test_unregisteredTreeRejected() public {
+        // 트리에 등록되지 않은(root 를 모르는) 상태에서는 거절
+        ElectionFactory f = new ElectionFactory(address(new VotingSystem()), address(new VotingToken()),
+            address(new RealVoteVerifier()), address(new RealTallyVerifier()), address(new PoseidonHasher()));
+        (address s,) = f.createElection(3, admin);
+        sys = VotingSystem(s);
         vm.startPrank(admin);
-        sys.configureElection(vm.parseJsonUint(json, ".coordPubX") + 1, vm.parseJsonUint(json, ".coordPubY"), 3);
+        sys.registerVoter(42);
+        sys.configureElection(vm.parseJsonUint(vj, ".coordPubX"), vm.parseJsonUint(vj, ".coordPubY"), 3);
         sys.openElection();
         vm.stopPrank();
-        address v = address(0x7000);
-        vm.prank(admin); tok.issueToken(v);
-        (bool ok,) = _vote(0, v, false);
-        assertFalse(ok, "proof accepted under different coordinator key");
+        (bool ok,) = _castFromFixture(0, false);
+        assertFalse(ok, "vote accepted with root unknown to this election");
     }
 }

@@ -189,3 +189,42 @@ tally 회로가 커진 이유: 표마다 BabyJubJub 스칼라 곱(약 2,500 cons
 
 ### 남은 개선 여지
 - 배치마다 공개 입력에 표 50개(150개 값)가 그대로 들어가 검증 가스가 배치 수에 비례한다. castVote 때 체인에서 해시를 누적하고 회로가 그 해시만 받게 하면(MACI 방식) 배치당 검증 비용을 더 줄일 수 있다 (온체인 Poseidon 필요).
+
+---
+
+## 3단계: 익명 투표 — 서버가 "누가 누구에게"를 알 수 없게 (branch: feat/anonymous-voting)
+
+배경: 지갑 키 = HKDF(웹메일 + 서버시크릿)라 서버가 모든 학생의 지갑·secret 을 다시 계산할 수 있었다. 투표 트랜잭션은 학생 지갑이 보냈고, `/vote/confirm` 은 학번(JWT)과 투표 임시 공개키를 한 행에 저장했다. 코디네이터 개인키로 표를 풀면 학번과 표가 바로 연결됐다.
+
+### 설계 (Semaphore 방식)
+- **랜덤 secret**: 원래 설계(발표자료 3)처럼 브라우저가 랜덤 secret 을 만든다. localStorage 에만 저장하고 서버로 보내지 않는다.
+- **등록**: `commitment = Poseidon(secret)` 만 보낸다. 서버는 학번·명단·재학인증을 확인한 뒤 `registerVoter(commitment)` 를 호출한다. 학생 1명당 선거별 1회만 등록되고, DB 에는 등록 시각만 남는다.
+- **유권자 머클 트리**: 컨트랙트가 깊이 16 증분 머클 트리를 온체인 Poseidon(`PoseidonHasher`)으로 직접 쌓는다. 최근 root 30개를 인정한다. 서버가 가짜 유권자를 몰래 넣을 수 없다 (트리는 체인에서 누구나 재계산 가능).
+- **voteProof**: "트리 안의 누군가(어느 leaf 인지 비공개)"를 증명하고, `nullifier = Poseidon(secret, scope)` 로 이중투표를 막는다. scope 는 선거 컨트랙트 주소라서 다른 선거에 같은 증명을 재사용할 수 없다.
+- **relayer**: 프론트가 증명을 `POST /vote/relay` 로 **로그인 토큰 없이** 보내면, 서버가 staticCall 로 사전 검증한 뒤 관리자 지갑으로 castVote 를 보낸다. 학생 지갑·투표 토큰·가스 드립이 필요 없다.
+- **연결 정보 제거**: `/vote/confirm` 삭제(410). `voters.voter_public_key` 와 `has_voted` 는 사용하지 않고, 마이그레이션에서 기존 값도 삭제한다. 관리자 화면에는 "투표 키 등록 여부"만 보인다.
+
+### 검증 결과
+| 항목 | 결과 |
+|---|---|
+| 회로 witness | 등록 유권자 통과 / 미등록 secret, 틀린 root, 경로 위조 -> 거절 (+ 2단계 공격 케이스 전부 유지) |
+| 실제 증명 + 실제 검증 컨트랙트 (Foundry) | 프론트 코드(voterIdService, ecdhService)로 62명 등록·60명 투표 -> relayer 주소로 castVote 통과. JS 로 만든 트리 root = 온체인 root. 같은 증명 재제출 / 암호문 변경 / 다른 선거에 재사용 / 등록 안 된 트리 -> 모두 거절. 이어서 실제 배치 tally 2개 -> 결과 20/20/20 |
+| 컨트랙트 (Foundry, mock) | 등록은 관리자만, 중복 commitment 거절, 모르는 root 거절, 투표 중 추가 등록 후 이전 root 로도 투표 가능, 토큰 없는 relayer 제출 가능, nullifier 중복 거절 |
+| Poseidon 온체인 | circomlib 결과와 일치 (Poseidon(5,9), Poseidon(0,0)) |
+| 서버 라우트 (mock) | relay: 형식 오류 400, 사전 검증 실패 시 트랜잭션 안 보냄, 성공 시 txHash. 등록: 자격 확인 -> registerVoter -> 재등록 409, DB 에 commitment 값 저장 안 함. /vote/confirm 410 |
+
+### 수치
+| 항목 | 값 |
+|---|---|
+| voteProof | 7,682 constraints (머클 깊이 16, 최대 65,536명), 공개 신호 9 |
+| 투표 증명 시간 | 약 1.2s (Node) |
+| registerVoter 가스 | 약 40만 (Poseidon 16회, 서버 부담) |
+| castVote 가스 (relayer) | 약 39만 |
+| Poseidon(2) 온체인 | 약 1.9만 가스 |
+
+### 남는 가정 / 한계 (논문에 명시)
+- relayer = 서버이므로, 서버가 요청 IP·시간을 기록해 추측하지 않는다고 가정한다. 별도 relayer 를 두면 완화된다.
+- 등록 직후 바로 투표하면 시점으로 추측될 여지가 있다. 시작 전(pending) 등록을 권장하고, 익명성 집합 = 등록 인원이다.
+- secret 을 잃으면(브라우저 변경/기록 삭제) 그 선거엔 투표할 수 없다. 재등록을 허용하면 2표가 가능해지므로 막았다.
+- 코디네이터(서버)는 개표 때 표 내용을 볼 수 있다 (누구 표인지는 모름). MACI 와 같은 가정이다.
+- 기존 토큰 발급·가스 드립 코드(voter.js, bulk 업로드)는 투표 경로에서 쓰이지 않으며 정리 대상이다.

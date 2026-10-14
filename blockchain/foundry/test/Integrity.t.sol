@@ -6,6 +6,7 @@ import "jnu/VotingSystem.sol";
 import "jnu/VotingToken.sol";
 import "jnu/mocks/MockVoteVerifier.sol";
 import "jnu/mocks/MockTallyVerifier.sol";
+import "jnu/PoseidonHasher.sol";
 
 contract IntegrityTest is Test {
     VotingSystem sys; VotingToken tok; MockTallyVerifier tv;
@@ -16,14 +17,19 @@ contract IntegrityTest is Test {
 
     function setUp() public {
         MockVoteVerifier vv = new MockVoteVerifier(); tv = new MockTallyVerifier();
-        ElectionFactory f = new ElectionFactory(address(new VotingSystem()), address(new VotingToken()), address(vv), address(tv));
+        ElectionFactory f = new ElectionFactory(address(new VotingSystem()), address(new VotingToken()), address(vv), address(tv), address(new PoseidonHasher()));
         (address s, address t) = f.createElection(1, admin);
         sys = VotingSystem(s); tok = VotingToken(t);
     }
     function open3() internal { vm.startPrank(admin); sys.configureElection(CX, CY, 3); sys.openElection(); vm.stopPrank(); }
-    function voter(uint i) internal returns (address v) { v = address(uint160(0x1000 + i)); vm.prank(admin); tok.issueToken(v); }
+    // 익명 투표: 등록(commitment) 후 아무 주소(relayer)나 제출. voter() 는 테스트 호환용으로 relayer 주소만 돌려준다.
+    function voter(uint i) internal returns (address v) {
+        v = address(uint160(0x1000 + i));
+        vm.prank(admin); sys.registerVoter(1000 + i);
+    }
     function cast(address v, uint i, uint ct, uint ex, uint ey) internal {
-        vm.prank(v); sys.castVote(bytes32(i + 1), abi.encode(ct), abi.encode(ex, ey), pA, pB, pC);
+        uint root = sys.getLastRoot();
+        vm.prank(v); sys.castVote(bytes32(i + 1), root, abi.encode(ct), abi.encode(ex, ey), pA, pB, pC);
     }
 
     function test_openRequiresConfig() public {
@@ -37,18 +43,21 @@ contract IntegrityTest is Test {
     }
     function test_rejectMalformed() public {
         open3(); address v = voter(1);
+        uint r = sys.getLastRoot();
         vm.prank(v); vm.expectRevert();
-        sys.castVote(bytes32(uint(1)), bytes("garbage"), abi.encode(uint(1), uint(2)), pA, pB, pC);
+        sys.castVote(bytes32(uint(1)), r, bytes("garbage"), abi.encode(uint(1), uint(2)), pA, pB, pC);
     }
     function test_rejectPaddingKey() public {
         open3(); address v = voter(1);
+        uint r = sys.getLastRoot();
         vm.prank(v); vm.expectRevert(bytes("invalid ephemeral key"));
-        sys.castVote(bytes32(uint(1)), abi.encode(uint(5)), abi.encode(uint(0), uint(1)), pA, pB, pC);
+        sys.castVote(bytes32(uint(1)), r, abi.encode(uint(5)), abi.encode(uint(0), uint(1)), pA, pB, pC);
     }
     function test_rejectOutOfField() public {
         open3(); address v = voter(1);
+        uint r = sys.getLastRoot();
         vm.prank(v); vm.expectRevert(bytes("value out of field"));
-        sys.castVote(bytes32(uint(1)), abi.encode(P), abi.encode(uint(1), uint(2)), pA, pB, pC);
+        sys.castVote(bytes32(uint(1)), r, abi.encode(P), abi.encode(uint(1), uint(2)), pA, pB, pC);
     }
     function test_noCapacityLimit() public {
         open3();
@@ -56,6 +65,48 @@ contract IntegrityTest is Test {
         assertEq(sys.getTotalVotes(), 120);
         vm.prank(admin); sys.closeElection();
         assertEq(sys.totalBatches(), 3);
+    }
+
+    // ───── 유권자 등록 / 익명 투표 ─────
+    function test_registerOnlyAdmin() public {
+        vm.expectRevert(bytes("only election admin")); sys.registerVoter(123);
+    }
+    function test_duplicateCommitmentRejected() public {
+        vm.startPrank(admin); sys.registerVoter(123);
+        vm.expectRevert(bytes("commitment already registered")); sys.registerVoter(123);
+        vm.stopPrank();
+    }
+    function test_unknownRootRejected() public {
+        open3(); voter(1);
+        vm.expectRevert(bytes("unknown merkle root"));
+        sys.castVote(bytes32(uint(1)), 999, abi.encode(uint(5)), abi.encode(uint(1), uint(2)), pA, pB, pC);
+    }
+    function test_oldRootStillAcceptedWithinHistory() public {
+        open3(); voter(1);
+        uint oldRoot = sys.getLastRoot();
+        for (uint i = 2; i < 10; i++) voter(i);                  // 투표 중 추가 등록
+        sys.castVote(bytes32(uint(1)), oldRoot, abi.encode(uint(5)), abi.encode(uint(1), uint(2)), pA, pB, pC);
+        assertEq(sys.getTotalVotes(), 1);
+    }
+    function test_anyoneCanRelayNoToken() public {
+        open3(); voter(1);
+        vm.prank(address(0xBEEF));                               // 토큰 없는 relayer
+        sys.castVote(bytes32(uint(1)), sys.getLastRoot(), abi.encode(uint(5)), abi.encode(uint(1), uint(2)), pA, pB, pC);
+        assertEq(sys.getTotalVotes(), 1);
+    }
+    function test_duplicateNullifierRejected() public {
+        open3(); voter(1);
+        uint r = sys.getLastRoot();
+        sys.castVote(bytes32(uint(7)), r, abi.encode(uint(5)), abi.encode(uint(1), uint(2)), pA, pB, pC);
+        vm.expectRevert(bytes("duplicate nullifier"));
+        sys.castVote(bytes32(uint(7)), r, abi.encode(uint(6)), abi.encode(uint(1), uint(2)), pA, pB, pC);
+    }
+    function test_registerGas() public {
+        vm.startPrank(admin);
+        sys.registerVoter(1);
+        uint g = gasleft(); sys.registerVoter(2);
+        emit log_named_uint("registerVoter gas (depth 16)", g - gasleft());
+        vm.stopPrank();
     }
 
     uint256 constant INIT = 14408838593220040598588012778523101864903887657864399481915450526643617223637;

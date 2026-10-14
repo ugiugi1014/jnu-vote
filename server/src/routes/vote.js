@@ -1,177 +1,78 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const auth = require("../middleware/auth");
-const { ethers } = require("ethers");
-
-function getProvider() {
-  if (!process.env.RPC_URL) {
-    throw new Error("RPC_URL 환경변수가 필요합니다.");
-  }
-  return new ethers.JsonRpcProvider(process.env.RPC_URL);
-}
+const { getVotingContract } = require("../blockchain/votingContract");
 
 /*
 =====================================================
-  1) 투표 확인 (사용자가 castVote 후 txHash 제출)
-  POST /vote/confirm
+  익명 투표 제출 (relayer)
+  POST /vote/relay        ※ 인증 없음 — 누가 보냈는지 서버가 알 필요가 없고, 알면 안 된다
   {
     "election_id": 1,
-    "txHash": "0x....",
-    "voter_public_key": "04...."
+    "nullifier": "0x...(bytes32)",
+    "merkleRoot": "123...",
+    "encryptedData": "0x...",   // abi.encode(uint256 ciphertext)
+    "voterPubKey": "0x...",     // abi.encode(uint256 ephPubX, uint256 ephPubY)
+    "pA": [..2], "pB": [[..2],[..2]], "pC": [..2]   // pi_b swap 적용된 값
   }
 
-  ※ email은 JWT에서 가져오는게 정석 (req.user.email)
+  - 서버 관리자 지갑이 castVote 트랜잭션을 대신 보낸다 (학생 지갑·토큰·가스 불필요).
+  - 자격은 증명(유권자 트리 포함)으로, 이중투표는 nullifier 로 컨트랙트가 막는다.
+  - 보내기 전에 staticCall 로 미리 실행해 보고, 실패할 증명이면 가스를 쓰지 않고 거절한다.
+  - 요청 본문/IP 를 로그로 남기지 않는다.
 =====================================================
 */
-router.post("/confirm", auth, async (req, res) => {
-  const conn = await db.getConnection();
+const isHex = (v, bytes) => typeof v === "string" && new RegExp(`^0x[0-9a-fA-F]{${bytes ? bytes * 2 : "2,"}}$`).test(v);
+const isUint = (v) => (typeof v === "string" && /^[0-9]{1,78}$/.test(v)) || (typeof v === "number" && Number.isSafeInteger(v) && v >= 0);
+const isPair = (a) => Array.isArray(a) && a.length === 2 && a.every(isUint);
 
+router.post("/relay", async (req, res) => {
   try {
-    const provider = getProvider();
-    await conn.beginTransaction();
-
-    const { election_id, txHash, voter_public_key } = req.body;
-
-    if (!election_id || !txHash) {
-      await conn.rollback();
-      return res.status(400).json({ message: "election_id, txHash 필수" });
+    const { election_id, nullifier, merkleRoot, encryptedData, voterPubKey, pA, pB, pC } = req.body || {};
+    if (!election_id || !isHex(nullifier, 32) || !isUint(merkleRoot) || !isHex(encryptedData) || !isHex(voterPubKey)
+        || !isPair(pA) || !Array.isArray(pB) || pB.length !== 2 || !pB.every(isPair) || !isPair(pC)) {
+      return res.status(400).json({ message: "요청 형식 오류" });
     }
 
-    if (!voter_public_key) {
-      await conn.rollback();
-      return res.status(400).json({ message: "voter_public_key 필수" });
-    }
-
-    // JWT에서 사용자 email 가져오기
-    const email = req.user.email;
-
-    // 1) election 조회
-    const [electionRows] = await conn.query(
-      `SELECT id, status, contract_address 
-       FROM elections 
-       WHERE id=?`,
-      [election_id]
-    );
-
-    if (electionRows.length === 0) {
-      await conn.rollback();
-      return res.status(404).json({ message: "선거 없음" });
-    }
-
-    const election = electionRows[0];
-
-    if (election.status !== "active") {
-      await conn.rollback();
+    const [rows] = await db.query(`SELECT status, contract_address FROM elections WHERE id=?`, [election_id]);
+    if (rows.length === 0) return res.status(404).json({ message: "선거 없음" });
+    if (rows[0].status !== "active" || !rows[0].contract_address) {
       return res.status(400).json({ message: "현재 투표 가능한 상태가 아님" });
     }
 
-    if (!election.contract_address) {
-      await conn.rollback();
-      return res.status(400).json({ message: "contract_address가 등록되지 않음" });
+    const contract = getVotingContract(rows[0].contract_address);
+    const args = [nullifier, BigInt(merkleRoot), encryptedData, voterPubKey,
+      pA.map(BigInt), pB.map((r) => r.map(BigInt)), pC.map(BigInt)];
+
+    try {
+      await contract.castVote.staticCall(...args);
+    } catch (err) {
+      const reason = err?.reason || err?.shortMessage || "rejected";
+      return res.status(400).json({ message: "투표가 거절되었습니다.", reason });
     }
 
-    // 2) voter 조회
-    const [voterRows] = await conn.query(
-      `SELECT v.id, us.wallet_address, COALESCE(uv.status, 'none') AS verification_status,
-              v.token_issued_at, v.has_voted
-       FROM voters v
-       LEFT JOIN user_secrets us ON us.email = v.email
-       LEFT JOIN user_verifications uv ON uv.email = v.email
-       WHERE v.election_id=? AND v.email=?`,
-      [election_id, email]
-    );
-
-    if (voterRows.length === 0) {
-      await conn.rollback();
-      return res.status(404).json({ message: "유권자 등록이 안됨" });
+    const tx = await contract.castVote(...args);
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      return res.status(502).json({ message: "트랜잭션 실패" });
     }
 
-    const voter = voterRows[0];
+    // 투표율 표시용 (누가 했는지는 기록하지 않음)
+    await db.query(`UPDATE elections SET voted_count = voted_count + 1 WHERE id=?`, [election_id]);
 
-    if (!voter.wallet_address) {
-      await conn.rollback();
-      return res.status(400).json({ message: "지갑 주소가 등록되지 않음" });
-    }
-
-    if (voter.verification_status !== "approved") {
-      await conn.rollback();
-      return res.status(400).json({ message: "학생증 인증 승인 후 투표할 수 있습니다." });
-    }
-
-    if (!voter.token_issued_at) {
-      await conn.rollback();
-      return res.status(400).json({ message: "투표 토큰이 발급되지 않았습니다." });
-    }
-
-    if (voter.has_voted) {
-      await conn.rollback();
-      return res.status(400).json({ message: "이미 투표한 유권자" });
-    }
-
-    // 3) 트랜잭션 receipt 검증
-    const receipt = await provider.getTransactionReceipt(txHash);
-
-    if (!receipt) {
-      await conn.rollback();
-      return res.status(400).json({ message: "트랜잭션이 아직 블록에 포함되지 않음" });
-    }
-
-    if (receipt.status !== 1) {
-      await conn.rollback();
-      return res.status(400).json({ message: "트랜잭션 실패(status=0)" });
-    }
-
-    // 4) 트랜잭션 내용 검증
-    const tx = await provider.getTransaction(txHash);
-
-    if (!tx) {
-      await conn.rollback();
-      return res.status(400).json({ message: "트랜잭션 조회 실패" });
-    }
-
-    // (A) 컨트랙트 주소 검증
-    if (!tx.to || tx.to.toLowerCase() !== election.contract_address.toLowerCase()) {
-      await conn.rollback();
-      return res.status(400).json({ message: "해당 선거 컨트랙트 tx가 아님" });
-    }
-
-    // (B) 투표자 주소 검증
-    if (!tx.from || tx.from.toLowerCase() !== voter.wallet_address.toLowerCase()) {
-      await conn.rollback();
-      return res.status(400).json({ message: "유권자 지갑에서 발생한 tx가 아님" });
-    }
-
-    // 5) voter_public_key 저장 + has_voted 처리
-    await conn.query(
-      `UPDATE voters
-       SET voter_public_key=?, has_voted=TRUE
-       WHERE id=?`,
-      [voter_public_key, voter.id]
-    );
-
-    // 6) elections voted_count 증가
-    await conn.query(
-      `UPDATE elections
-       SET voted_count = voted_count + 1
-       WHERE id=?`,
-      [election_id]
-    );
-
-    await conn.commit();
-
-    return res.json({
-      message: "투표 확인 완료",
-      election_id,
-      txHash,
-    });
+    return res.json({ message: "투표 완료", txHash: receipt.hash || tx.hash });
   } catch (err) {
-    await conn.rollback();
-    console.error(err);
-    return res.status(500).json({ message: "서버 오류", error: err.message });
-  } finally {
-    conn.release();
+    console.error("[vote/relay] 오류:", err.message);
+    return res.status(500).json({ message: "서버 오류" });
   }
+});
+
+/*
+  POST /vote/confirm — 삭제됨
+  학번(JWT)과 투표 트랜잭션·임시 공개키를 한 행에 묶어 저장해서, 서버가 "누가 누구에게"를 복원할 수 있었다.
+*/
+router.post("/confirm", (req, res) => {
+  res.status(410).json({ message: "더 이상 사용하지 않는 API 입니다. /vote/relay 를 사용하세요." });
 });
 
 module.exports = router;
