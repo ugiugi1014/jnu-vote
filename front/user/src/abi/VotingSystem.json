@@ -6,6 +6,19 @@
   },
   {
     "type": "function",
+    "name": "batchesProcessed",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "castVote",
     "inputs": [
       {
@@ -268,8 +281,13 @@
   },
   {
     "type": "function",
-    "name": "recordTally",
+    "name": "recordTallyBatch",
     "inputs": [
+      {
+        "name": "batchIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "candidateIds",
         "type": "uint256[]",
@@ -297,8 +315,8 @@
       },
       {
         "name": "_pubSignals",
-        "type": "uint256[157]",
-        "internalType": "uint256[157]"
+        "type": "uint256[160]",
+        "internalType": "uint256[160]"
       }
     ],
     "outputs": [],
@@ -339,6 +357,19 @@
   },
   {
     "type": "function",
+    "name": "tallyCommit",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "tallyResult",
     "inputs": [
       {
@@ -365,6 +396,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract ITallyVerifier"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalBatches",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -510,6 +554,25 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TallyBatchRecorded",
+    "inputs": [
+      {
+        "name": "batchIndex",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "tallyCommit",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false

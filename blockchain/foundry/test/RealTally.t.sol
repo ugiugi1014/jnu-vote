@@ -7,11 +7,12 @@ import "jnu/VotingToken.sol";
 import {Groth16Verifier as RealVoteVerifier} from "jnu/VoteVerifier.sol";
 import {Groth16Verifier as RealTallyVerifier} from "jnu/TallyVerifier.sol";
 
-// 실제 투표 증명 3개로 투표 -> 서버 코드로 만든 실제 집계 증명으로 recordTally (검증자 모두 실제)
+// 실제 투표 증명 60개로 투표 -> 서버 코드(buildTallyBatchInputs)로 만든 실제 집계 증명 2배치로 recordTallyBatch
 contract RealTallyTest is Test {
     VotingSystem sys; VotingToken tok;
     address admin = address(0xA11CE);
     string vj; string tj;
+    uint constant N = 60;
 
     struct P { uint[2] a; uint[2][2] b; uint[2] c; }
 
@@ -31,7 +32,7 @@ contract RealTallyTest is Test {
         sys.configureElection(vm.parseJsonUint(vj, ".coordPubX"), vm.parseJsonUint(vj, ".coordPubY"), 3);
         sys.openElection();
         vm.stopPrank();
-        for (uint i = 0; i < 3; i++) {
+        for (uint i = 0; i < N; i++) {
             string memory k = string.concat(".votes[", vm.toString(i), "]");
             P memory p = _proof(vj, k);
             address v = address(uint160(0x5000 + i));
@@ -45,35 +46,53 @@ contract RealTallyTest is Test {
         vm.prank(admin); sys.closeElection();
     }
 
-    function _signals() internal view returns (uint[157] memory ps) {
-        uint[] memory s = vm.parseJsonUintArray(tj, ".publicSignals");
-        require(s.length == 157, "signals");
-        for (uint i = 0; i < 157; i++) ps[i] = s[i];
+    function _signals(uint k) internal view returns (uint[160] memory ps) {
+        uint[] memory s = vm.parseJsonUintArray(tj, string.concat(".batches[", vm.toString(k), "].publicSignals"));
+        require(s.length == 160, "signals");
+        for (uint i = 0; i < 160; i++) ps[i] = s[i];
     }
     function _ids() internal pure returns (uint256[] memory a) { a = new uint256[](5); for (uint c = 0; c < 5; c++) a[c] = 100 + c; }
-    function _counts() internal view returns (uint256[] memory) { return vm.parseJsonUintArray(tj, ".voteCounts"); }
-
-    function test_realTallyRecorded() public {
-        P memory p = _proof(tj, "");
+    function _result(uint k) internal view returns (uint256[] memory) { return vm.parseJsonUintArray(tj, string.concat(".batches[", vm.toString(k), "].result")); }
+    function _submit(uint k) internal returns (uint gasUsed) {
+        P memory p = _proof(tj, string.concat(".batches[", vm.toString(k), "]"));
+        uint[160] memory ps = _signals(k);
+        uint256[] memory r = _result(k);
         vm.prank(admin);
         uint g = gasleft();
-        sys.recordTally(_ids(), _counts(), p.a, p.b, p.c, _signals());
-        emit log_named_uint("recordTally gas (real Groth16, 157 signals)", g - gasleft());
-        assertEq(sys.getVoteCount(100) + sys.getVoteCount(101) + sys.getVoteCount(102), 3);
+        sys.recordTallyBatch(k, _ids(), r, p.a, p.b, p.c, ps);
+        gasUsed = g - gasleft();
+    }
+
+    function test_realBatchedTally() public {
+        assertEq(sys.totalBatches(), 2);
+        emit log_named_uint("recordTallyBatch[0] gas", _submit(0));
+        assertFalse(sys.tallied());
+        assertEq(sys.getVoteCount(100), 0); // 중간 배치 후에는 결과 비공개
+        emit log_named_uint("recordTallyBatch[1] gas (final)", _submit(1));
+        assertTrue(sys.tallied());
+        assertEq(sys.getVoteCount(100) + sys.getVoteCount(101) + sys.getVoteCount(102), N);
         emit log_named_uint("candidate0", sys.getVoteCount(100));
         emit log_named_uint("candidate1", sys.getVoteCount(101));
         emit log_named_uint("candidate2", sys.getVoteCount(102));
     }
 
-    function test_realTallyForgedResultRejected() public {
-        // 증명은 그대로 두고 결과만 바꾸면(후보0 -> 후보1) 검증 실패해야 한다
-        P memory p = _proof(tj, "");
-        uint[157] memory ps = _signals();
-        uint256[] memory c = _counts();
-        require(c[0] > 0, "need a vote for candidate 0");
-        c[0] -= 1; c[1] += 1; ps[152] -= 1; ps[153] += 1;
+    function test_finalBatchFirstRejected() public {
+        P memory p = _proof(tj, ".batches[1]");
+        uint[160] memory ps = _signals(1);
+        uint256[] memory r = _result(1);
+        vm.prank(admin);
+        vm.expectRevert(bytes("wrong batch order"));
+        sys.recordTallyBatch(1, _ids(), r, p.a, p.b, p.c, ps);
+    }
+
+    function test_forgedFinalResultRejected() public {
+        _submit(0);
+        P memory p = _proof(tj, ".batches[1]");
+        uint[160] memory ps = _signals(1);
+        uint256[] memory r = _result(1);
+        r[0] -= 1; r[1] += 1; ps[155] -= 1; ps[156] += 1;   // 후보0 표 1개를 후보1로
         vm.prank(admin);
         vm.expectRevert(bytes("tally proof failed"));
-        sys.recordTally(_ids(), c, p.a, p.b, p.c, ps);
+        sys.recordTallyBatch(1, _ids(), r, p.a, p.b, p.c, ps);
     }
 }

@@ -21,7 +21,7 @@ async function runAutoTally(electionId) {
     const result = await performTally(electionId);
 
     console.log(
-      `[scheduler] election ${electionId} 자동 개표 완료 (tx=${result.tallyTxHash})`
+      `[scheduler] election ${electionId} 자동 개표 완료 (배치 ${result.batches}개, tx=${(result.tallyTxHashes || []).join(",")})`
     );
   } catch (err) {
     // 사전 조건 미달 (contract_address 없음, 투표 데이터 없음 등) 은 정상 케이스로 간주

@@ -4,11 +4,14 @@
 //   1) closed 상태 확인 + 코디네이터 키/컨트랙트 주소 확인
 //   2) 후보/유권자/체인 vote 데이터 조회
 //   3) BabyJubJub ECDH 복호화 → candidateID 복원 → 집계
-//   4) ZKP② proof 생성 (tally.circom: 회로 안에서 공유키를 직접 계산)
-//   5) 체인 recordTally 호출 (실패 시 DB 롤백 -> 코디네이터 키 유지, 재시도 가능)
-//   6) DB tally_results 저장 + elections.status = tallied + coord_private_key 폐기
+//   4) 표를 50개씩 배치로 나눠 ZKP② proof 생성 (병렬, TALLY_PROOF_CONCURRENCY)
+//      배치 사이에는 누적 득표 커밋먼트만 이어지고, 최종 득표는 마지막 배치에서만 공개
+//   5) 체인 recordTallyBatch 를 배치 순서대로 호출
+//      - 이미 체인에 기록된 배치(batchesProcessed)는 건너뜀 -> 중간 실패 시 재실행하면 이어서 진행
+//      - salt 가 코디 개인키에서 결정적으로 나오므로 재실행해도 커밋먼트가 같다
+//   6) 마지막 배치까지 성공한 뒤에만 DB tally_results 저장 + tallied + coord_private_key 폐기
 //
-// 정상 케이스 → { tally, proof, publicSignals, tallyTxHash }
+// 정상 케이스 → { tally, batches, tallyTxHashes }
 // 실패 → throw Error (HTTP 400 매핑용 statusCode 첨부). DB 는 변경되지 않음.
 
 const db = require("../db");
@@ -18,7 +21,7 @@ const {
   parseEncryptedData,
   parseVoterPublicKey,
 } = require("./ecdhDecrypt");
-const { generateTallyZkpInput, runCircomProof } = require("./zkpServices");
+const { buildTallyBatchInputs, proveTallyBatches, TALLY_CANDIDATES } = require("./zkpServices");
 
 function tallyError(message, statusCode = 400) {
   const err = new Error(message);
@@ -30,8 +33,8 @@ function toSolidityProof(proof, publicSignals) {
   if (!proof?.pi_a || !proof?.pi_b || !proof?.pi_c) {
     throw new Error("tally proof 형식 오류");
   }
-  if (!Array.isArray(publicSignals) || publicSignals.length !== 157) {
-    throw new Error("tally publicSignals는 157개여야 합니다.");
+  if (!Array.isArray(publicSignals) || publicSignals.length !== 160) {
+    throw new Error("tally publicSignals는 160개여야 합니다.");
   }
 
   return {
@@ -133,55 +136,64 @@ async function performTally(electionId) {
 
       tally[decrypted.candidateId] += 1;
       zkpVotes.push({
+        candidateId: decrypted.candidateId,
         ciphertext: decrypted.ciphertext,
         ephPubX: decrypted.ephPubX,
         ephPubY: decrypted.ephPubY,
       });
     }
 
-    // 7) ZKP② proof 생성
-    const zkpInput = generateTallyZkpInput({
+    // 7) 배치 입력 생성 + ZKP② proof 병렬 생성 (아직 체인에 기록되지 않은 배치만)
+    const batches = await buildTallyBatchInputs({
       coordPriv: election.coord_private_key,
       coordPub,
       zkpVotes,
-      tally,
       candidatesCount,
     });
+    const onChainTotal = Number(await contract.totalBatches());
+    if (onChainTotal !== batches.length) {
+      throw tallyError(`배치 수 불일치: 체인=${onChainTotal}, 서버=${batches.length}`, 500);
+    }
+    const done = Number(await contract.batchesProcessed());
+    const pending = batches.slice(done);
 
-    let proofResult;
+    let proofs;
     try {
-      proofResult = await runCircomProof(zkpInput);
+      proofs = await proveTallyBatches(pending, `tally_${electionId}`);
     } catch (err) {
       console.error("[tally] ZKP proof 생성 실패:", err.message);
       throw new Error(`ZKP proof 생성 실패: ${err.message}`);
     }
 
-    // 8) 체인에 recordTally (DB 커밋 전 — 실패하면 롤백되어 코디네이터 키가 남고 재시도 가능)
-    const TALLY_CANDIDATES = 5;
+    // 8) 체인에 recordTallyBatch 순서대로 (DB 커밋 전 — 실패하면 롤백되어 코디 키가 남고, 재실행 시 이어서 진행)
     const candidateIds = [];
-    const voteCounts = [];
     for (let c = 0; c < TALLY_CANDIDATES; c++) {
-      const id = candidateMap[c]; // 해당 index의 후보 id, 없으면 undefined
+      const id = candidateMap[c]; // 해당 index의 후보 id, 없으면 0
       candidateIds.push(id != null ? id : 0);
-      voteCounts.push(tally[c] || 0);
     }
-    const solidityProof = toSolidityProof(proofResult.proof, proofResult.publicSignals);
-
-    let tallyTxHash;
-    try {
-      const tx = await contract.recordTally(
-        candidateIds,
-        voteCounts,
-        solidityProof.pA,
-        solidityProof.pB,
-        solidityProof.pC,
-        solidityProof.pubSignals
-      );
-      const receipt = await tx.wait();
-      tallyTxHash = receipt?.hash || tx.hash;
-    } catch (err) {
-      console.error("[tally] recordTally 체인 호출 실패:", err.message);
-      throw tallyError(`recordTally 실패 (DB 변경 없음, 재시도 가능): ${err.message}`, 502);
+    const tallyTxHashes = [];
+    for (let j = 0; j < pending.length; j++) {
+      const k = done + j;
+      const solidityProof = toSolidityProof(proofs[j].proof, proofs[j].publicSignals);
+      try {
+        const tx = await contract.recordTallyBatch(
+          k,
+          candidateIds,
+          pending[j].result,
+          solidityProof.pA,
+          solidityProof.pB,
+          solidityProof.pC,
+          solidityProof.pubSignals
+        );
+        const receipt = await tx.wait();
+        tallyTxHashes.push(receipt?.hash || tx.hash);
+      } catch (err) {
+        console.error(`[tally] recordTallyBatch(${k}) 체인 호출 실패:`, err.message);
+        throw tallyError(
+          `recordTallyBatch ${k}/${batches.length - 1} 실패 (DB 변경 없음, 재실행하면 이 배치부터 이어서 진행): ${err.message}`,
+          502
+        );
+      }
     }
 
     // 9) DB tally_results 저장
@@ -209,9 +221,8 @@ async function performTally(electionId) {
     return {
       electionId,
       tally,
-      proof: proofResult.proof,
-      publicSignals: proofResult.publicSignals,
-      tallyTxHash,
+      batches: batches.length,
+      tallyTxHashes,
     };
   } catch (err) {
     try {

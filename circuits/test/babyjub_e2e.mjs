@@ -7,7 +7,7 @@ import { createRequire } from "module";
 import { encryptVote } from "../../front/user/src/services/ecdhService.js";
 const require = createRequire(import.meta.url);
 const { generateCoordKeyPair, decryptVote } = require("../../server/src/services/ecdhDecrypt.js");
-const { generateTallyZkpInput } = require("../../server/src/services/zkpServices.js");
+const { buildTallyBatchInputs } = require("../../server/src/services/zkpServices.js");
 
 const dir = path.resolve(process.argv[2] || "zkp/build");
 const P = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
@@ -53,28 +53,37 @@ for (let i = 0; i < ids.length; i++) {
   }
 }
 
-// ---- server decrypt ----
+// ---- server decrypt (60표 -> 2배치) ----
+for (let i = ids.length; i < 60; i++) {
+  const c = i % numCandidates;
+  ids.push(c);
+  ballots.push(await encryptVote(c, coordPub));
+}
 const tally = {};
 const zkpVotes = [];
 for (const b of ballots) {
   const d = await decryptVote({ ciphertext: b.ciphertext }, privateKey, { x: b.ephPubX, y: b.ephPubY });
   tally[d.candidateId] = (tally[d.candidateId] || 0) + 1;
-  zkpVotes.push({ ciphertext: d.ciphertext, ephPubX: d.ephPubX, ephPubY: d.ephPubY });
+  zkpVotes.push({ candidateId: d.candidateId, ciphertext: d.ciphertext, ephPubX: d.ephPubX, ephPubY: d.ephPubY });
 }
 const expected = {}; ids.forEach((c) => (expected[c] = (expected[c] || 0) + 1));
 const decOk = JSON.stringify(tally) === JSON.stringify(expected);
 console.log(`${decOk ? "OK  " : "FAIL"} [server ] decrypt matches plaintext votes ${JSON.stringify(tally)}`);
 if (!decOk) process.exitCode = 1;
 
-// ---- tally ----
-const base = generateTallyZkpInput({ coordPriv: privateKey, coordPub, zkpVotes, tally, candidatesCount: numCandidates });
-await check("tally", "honest tally", base, true);
-const wrong = [...base.adminResult]; wrong[0] = String(+wrong[0] - 1); wrong[1] = String(+wrong[1] + 1);
-await check("tally", "admin moves a vote 0->1", { ...base, adminResult: wrong }, false);
-const drop = [...base.adminResult]; drop[0] = String(+drop[0] - 1);
-await check("tally", "admin drops a vote", { ...base, adminResult: drop }, false);
-const other = await generateCoordKeyPair();
-await check("tally", "admin uses another private key", { ...base, coordPriv: other.privateKey }, false);
+// ---- tally (배치) ----
+const batches = await buildTallyBatchInputs({ coordPriv: privateKey, coordPub, zkpVotes, candidatesCount: numCandidates });
+console.log(`     [tally] ${batches.length} batches, final result = ${batches.at(-1).result.join(",")}`);
+const [b0, b1] = batches.map((b) => b.input);
+await check("tally", "batch 0 (intermediate, result hidden)", b0, true);
+await check("tally", "batch 1 (final, result revealed)", b1, true);
+const mod = (o, k, f) => ({ ...o, [k]: f(o[k]) });
+const bump = (arr, i, d) => arr.map((v, j) => (j === i ? String(BigInt(v) + BigInt(d)) : v));
+await check("tally", "final: move a vote 0->1", mod(b1, "result", (r) => bump(bump(r, 0, -1), 1, 1)), false);
+await check("tally", "final: drop a vote", mod(b1, "result", (r) => bump(r, 0, -1)), false);
+await check("tally", "intermediate batch reveals its tally", { ...b0, result: b1.result.map(() => "1") }, false);
+await check("tally", "intermediate batch claims isFinal", { ...b0, isFinal: "1" }, false);
+await check("tally", "batch 1 with forged prevTally", mod(b1, "prevTally", (t) => bump(t, 0, 1)), false);
+await check("tally", "admin uses another private key", { ...b1, coordPriv: (await generateCoordKeyPair()).privateKey }, false);
 // 공개 입력 자체를 바꾸는 공격은 회로만으로는 막을 수 없다 -> 컨트랙트가 저장된 ephPub 와 대조해서 차단 (Foundry 테스트 참고)
-await check("tally", "real vote relabeled as padding (circuit-only; contract blocks)", { ...base, ephPubX: base.ephPubX.map((v, i) => (i === 0 ? "0" : v)), ephPubY: base.ephPubY.map((v, i) => (i === 0 ? "1" : v)), adminResult: drop }, true);
 process.exit(process.exitCode || 0);

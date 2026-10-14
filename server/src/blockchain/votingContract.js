@@ -3,7 +3,7 @@
 // 환경변수:
 //   RPC_URL: 이더리움 RPC 엔드포인트 (Sepolia 등)
 //   ADMIN_WALLET_PRIVATE_KEY: 백엔드가 컨트랙트 호출에 쓰는 관리자 지갑 개인키
-//                              (issueTokenBatch, recordTally 등 onlyOwner/onlyElectionAdmin 호출용)
+//                              (issueTokenBatch, recordTallyBatch 등 onlyOwner/onlyElectionAdmin 호출용)
 //                              ※ 흐름도의 "코디네이터 BabyJubJub 키"와는 별개.
 //                                ECDH 키는 elections.coord_private_key (DB) 에 보관됨.
 //
@@ -16,7 +16,10 @@ const votingSystemAbi = [
   "function getAllVotes() view returns (tuple(bytes encryptedData, bytes voterPublicKey)[])",
   "function getTotalVotes() view returns (uint256)",
   "function getVoteCount(uint256 candidateId) view returns (uint256)",
-  "function recordTally(uint256[] candidateIds, uint256[] voteCounts, uint[2] pA, uint[2][2] pB, uint[2] pC, uint[157] pubSignals) external",
+  "function recordTallyBatch(uint256 batchIndex, uint256[] candidateIds, uint256[] voteCounts, uint[2] pA, uint[2][2] pB, uint[2] pC, uint[160] pubSignals) external",
+  "function totalBatches() view returns (uint256)",
+  "function batchesProcessed() view returns (uint256)",
+  "function tallyCommit() view returns (uint256)",
   "function configureElection(uint256 coordPubX, uint256 coordPubY, uint256 numCandidates) external",
   "function coordPubX() view returns (uint256)",
   "function coordPubY() view returns (uint256)",
@@ -66,7 +69,7 @@ function getVotingContract(contractAddress) {
   return new ethers.Contract(contractAddress, votingSystemAbi, getWallet());
 }
 
-// 체인 선거 종료 — whenElectionClosed(recordTally 전제)를 위해 호출.
+// 체인 선거 종료 — whenElectionClosed(recordTallyBatch 전제)를 위해 호출.
 // 이미 닫혀 있으면(electionOpen=false) 스킵(중복 호출 시 revert 방지). 멱등.
 async function closeElectionOnChain(contractAddress) {
   if (!contractAddress) return { skipped: "no_contract" };

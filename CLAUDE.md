@@ -19,7 +19,7 @@
 
 ```
 blockchain/contracts/   ElectionFactory.sol, VotingSystem.sol, VotingToken.sol,
-                        TallyVerifier.sol(uint[157]), VoteVerifier.sol(uint[7]), mocks/
+                        TallyVerifier.sol(uint[160]), VoteVerifier.sol(uint[7]), mocks/
 circuits/               voteProof.circom (VoteProof()), tally.circom (Tally(50,5)), test/babyjub_e2e.mjs
 server/src/
   index.js              Express 엔트리. /elections 마운트, /api prefix 호환
@@ -43,7 +43,8 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
 - 코디네이터 키(BabyJubJub): 선거 생성 시 자동 생성. `coord_private_key`=10진수 스칼라(DB), `coord_public_key`=JSON {x,y}. 선거 시작 시 `configureElection(x, y, numCandidates)`로 체인 고정. 개표(체인 기록 성공) 후 NULL 폐기. ADMIN_WALLET_PRIVATE_KEY(컨트랙트 서명용)와 별개.
 - 투표 암호화: 임시 키 ephPriv → `ephPub = ephPriv*Base8`, `shared = ephPriv*coordPub` → `ciphertext = candidateID + Poseidon(shared.x, shared.y)` (mod p). nonce 없음(임시 키가 매번 새로움).
 - ZKP①(voteProof): nullifier + 후보 범위 + **암호문이 등록된 코디 키로 유효 후보를 암호화한 것**까지 증명. 공개 신호 7개 `[nullifier, numCandidates, coordPubX, coordPubY, ciphertext, ephPubX, ephPubY]`.
-- ZKP②(tally): 공유키를 입력으로 받지 않고 **회로 안에서 coordPriv*ephPub 로 계산**, coordPub=coordPriv*Base8 검증, 실제 표는 반드시 유효 후보 하나로 복호화. → 관리자가 표를 버리거나 옮길 수 없음.
+- ZKP②(tally, **배치**): 공유키를 입력으로 받지 않고 **회로 안에서 coordPriv*ephPub 로 계산**, coordPub=coordPriv*Base8 검증, 실제 표는 반드시 유효 후보 하나로 복호화. → 관리자가 표를 버리거나 옮길 수 없음.
+  표를 50개씩 배치로 나눠 배치마다 증명(**표 수 제한 없음**). 배치 사이에는 `Poseidon(누적득표[5], salt)` 커밋먼트만 이어지고 최종 득표는 마지막 배치에서만 공개. salt_k = Poseidon(coordPriv, k+1) (결정적 → 실패 후 재실행 시 체인에 기록된 배치부터 이어서 진행).
 - 프론트 증명 생성은 `src/workers/voteProofWorker.js` (Web Worker). 회로 파일은 투표 화면 진입 시 미리 로드.
 - **익명성/이중투표 실질 보장**: nullifier가 walletPrivateKey 기반이라 "다른 지갑=다른 nullifier". KDF로 1인=1지갑이므로, 1인1표는 **학번당 토큰 1개 + soulbound burn**이 핵심. nullifier 매핑은 같은 nullifier 재사용 차단(방어 심화).
 
@@ -56,18 +57,19 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
 
 ---
 
-## 회로/검증자 사이즈 (50,5) — tally pubSignals 157
+## 회로/검증자 사이즈 — tally 배치(50표, 5후보) pubSignals 160
 
 | 회로 | constraints | 공개 신호 | 필요 ptau |
 |---|---|---|---|
 | voteProof | 3,554 | 7 | 2^12 |
-| tally (50,5) | 128,426 | 157 | 2^17 |
+| tally 배치 (50,5) | 129,140 | 160 | 2^17 |
 
-tally public 순서 = coordPubX, coordPubY → ciphertexts[50] → ephPubX[50] → ephPubY[50] → adminResult[5].
-VotingSystem.recordTally(uint[157]) 가 저장된 표/키와 하나씩 대조. 패딩 슬롯 = (ciphertext 0, ephPub (0,1)).
-TallyVerifier(157 입력) 런타임 바이트코드 약 16.3KB (24KB 한도 이내), 검증 가스 약 1.27M.
+tally public 순서 = coordPubX, coordPubY → ciphertexts[50] → ephPubX[50] → ephPubY[50] → prevCommit → newCommit → isFinal → result[5].
+VotingSystem.recordTallyBatch(batchIndex, ..., uint[160]) 가 배치 순서, 저장된 표/키, 커밋먼트 연결, final 플래그를 대조. 패딩 슬롯 = (ciphertext 0, ephPub (0,1)).
+초기 커밋먼트 = Poseidon(0,0,0,0,0,0) (컨트랙트 INITIAL_TALLY_COMMIT, initialize 에서 설정 — clone 이라 선언부 초기값 불가).
+배치 증명 1개 약 13s (2코어), 병렬 생성 TALLY_PROOF_CONCURRENCY(기본 2). recordTallyBatch 가스: 꽉 찬 배치 약 2.1M, 마지막 배치 약 1.6M.
 
-관련 상수: `.env` TALLY_CIRCUIT_VOTES=50 / TALLY_CIRCUIT_CANDIDATES=5, tallyService publicSignals 157, votingContract recordTally uint[157], elections.js candidate_index 0~4.
+관련 상수: `.env` TALLY_CIRCUIT_VOTES=50(배치 크기) / TALLY_CIRCUIT_CANDIDATES=5, tallyService publicSignals 160, votingContract recordTallyBatch uint[160], elections.js candidate_index 0~4.
 
 ---
 
@@ -77,13 +79,13 @@ TallyVerifier(157 입력) 런타임 바이트코드 약 16.3KB (24KB 한도 이�
 
 0. **ZKP 키 재생성 (회로 변경 시)**: 공개 ptau(Hermez powersOfTau28_hez_final_17.ptau 등)로 voteProof/tally zkey 생성 → verifier export. 레포의 voteProof_final.zkey / VoteVerifier.sol 은 개발용 로컬 셋업이므로 실제 운영 전 반드시 교체.
 1. VoteVerifier.sol(uint[7]) 배포(생성자 인자 없음, value 0) → 주소 A
-2. TallyVerifier.sol(uint[157]) 배포 → 주소 B
+2. TallyVerifier.sol(uint[160]) 배포 → 주소 B
 3. VotingToken impl 배포 → C
 4. VotingSystem impl 배포 → D
 5. ElectionFactory(D, C, A, B) 배포 → F  (검증자 주소가 immutable로 clone에 주입됨)
 6. `server/.env` FACTORY_ADDRESS = F
 7. VotingSystem.sol 컴파일 ABI 전체를 front/user/src/abi/VotingSystem.json에 교체 (드롭다운에서 VotingSystem 선택 — Groth16Verifier 아님)
-8. tally 산출물(zkp/build/tally_js wasm, zkp/keys/tally_final.zkey, tally_verification_key.json)이 새 회로(157 공개 신호)인지 확인
+8. tally 산출물(zkp/build/tally_js wasm, zkp/keys/tally_final.zkey, tally_verification_key.json)이 새 회로(배치, 160 공개 신호)인지 확인
 
 배포 후: AdminPage `POST /:id/deploy` → Factory.createElection → VotingSystem+VotingToken clone + 주소 자동 등록.
 

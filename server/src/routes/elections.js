@@ -375,7 +375,7 @@ router.post("/:id/close", auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: "선거 종료 실패 (active 상태만 가능)" });
     }
 
-    // 체인 closeElection() 선행 — recordTally의 whenElectionClosed 전제 (start의 openElection 대칭)
+    // 체인 closeElection() 선행 — recordTallyBatch의 whenElectionClosed 전제 (start의 openElection 대칭)
     const { closeElectionOnChain } = require("../blockchain/votingContract");
     await closeElectionOnChain(election.contract_address);
 

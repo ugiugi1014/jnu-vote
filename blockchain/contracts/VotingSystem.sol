@@ -19,12 +19,13 @@ interface ITallyVerifier {
         uint[2] calldata a,
         uint[2][2] calldata b,
         uint[2] calldata c,
-        uint[157] calldata input
+        uint[160] calldata input
     ) external view returns (bool);
 }
 
 contract VotingSystem is Initializable, OwnableUpgradeable {
-    uint256 private constant TALLY_MAX_VOTES = 50;
+    // tally 회로 1배치당 표 수 (배치 수 제한 없음)
+    uint256 private constant TALLY_BATCH_SIZE = 50;
     uint256 private constant TALLY_CANDIDATES = 5;
     uint256 private constant SNARK_SCALAR_FIELD =
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
@@ -52,12 +53,21 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
     uint256 public numCandidates;
     bool public tallied;
 
+    // 배치 집계 상태: 누적 득표 커밋먼트 Poseidon(누적득표[5], salt)
+    // 초기값 = Poseidon(0,0,0,0,0,0)
+    uint256 private constant INITIAL_TALLY_COMMIT =
+        14408838593220040598588012778523101864903887657864399481915450526643617223637;
+    // ※ clone(EIP-1167) 은 선언부 초기값이 적용되지 않으므로 initialize 에서 설정
+    uint256 public tallyCommit;
+    uint256 public batchesProcessed;
+
     event ElectionAdminSet(address indexed admin);
     event ElectionOpened();
     event ElectionClosed();
     event VoteCast(bytes32 indexed nullifier);
     event TallyRecorded(uint256 indexed candidateId, uint256 voteCount);
     event ElectionConfigured(uint256 coordPubX, uint256 coordPubY, uint256 numCandidates);
+    event TallyBatchRecorded(uint256 indexed batchIndex, uint256 tallyCommit);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -81,6 +91,7 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         electionAdmin = _electionAdmin;
         voteVerifier = IVoteVerifier(_voteVerifier);
         tallyVerifier = ITallyVerifier(_tallyVerifier);
+        tallyCommit = INITIAL_TALLY_COMMIT;
 
         emit ElectionAdminSet(_electionAdmin);
     }
@@ -142,8 +153,6 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
     ) external whenElectionOpen {
         require(votingToken.isTokenValid(msg.sender), "voting token required");
         require(!nullifiers[nullifier], "duplicate nullifier");
-        // tally 회로 용량(TALLY_MAX_VOTES)을 넘는 표가 저장되면 recordTally가 영구 revert -> 개표 불능
-        require(votes.length < TALLY_MAX_VOTES, "tally capacity reached");
 
         // 형식 검증 (깨진 데이터가 저장되면 recordTally 가 영구 revert -> 개표 불능)
         //   encryptedData = abi.encode(uint256 ciphertext)
@@ -170,56 +179,78 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         emit VoteCast(nullifier);
     }
 
-    // tally 공개 신호 레이아웃 (Tally(50,5), 157개)
+    // tally 배치 공개 신호 레이아웃 (Tally(50,5), 160개)
     //   [0] coordPubX, [1] coordPubY
-    //   [2 .. 51]    ciphertext[i]
+    //   [2 .. 51]    ciphertext[i]   (i = 배치 내 순번)
     //   [52 .. 101]  ephPubX[i]
     //   [102 .. 151] ephPubY[i]
-    //   [152 .. 156] 후보별 득표수
-    // 패딩 슬롯(i >= votes.length): ciphertext = 0, ephPub = (0, 1)
+    //   [152] prevCommit, [153] newCommit, [154] isFinal
+    //   [155 .. 159] 최종 득표수 (마지막 배치에서만, 그 외 0)
+    // 패딩 슬롯(마지막 배치의 남는 칸): ciphertext = 0, ephPub = (0, 1)
 
-    function recordTally(
+    /// @notice 필요한 배치 수 (표가 0개여도 결과 기록을 위해 1배치)
+    function totalBatches() public view returns (uint256) {
+        if (votes.length == 0) return 1;
+        return (votes.length + TALLY_BATCH_SIZE - 1) / TALLY_BATCH_SIZE;
+    }
+
+    /// @notice 배치 순서대로 집계 증명을 제출한다. 배치를 건너뛰거나 표를 빼면 커밋먼트가 이어지지 않아 실패.
+    ///         candidateIds/voteCounts 는 마지막 배치에서만 사용 (그 외에는 0 배열).
+    function recordTallyBatch(
+        uint256 batchIndex,
         uint256[] calldata candidateIds,
         uint256[] calldata voteCounts,
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[157] calldata _pubSignals
+        uint[160] calldata _pubSignals
     ) external onlyElectionAdmin whenElectionClosed {
         require(!tallied, "already tallied");
-        require(candidateIds.length == voteCounts.length, "array length mismatch");
-        require(candidateIds.length == TALLY_CANDIDATES, "candidate count mismatch");
-        require(votes.length <= TALLY_MAX_VOTES, "vote count exceeds tally circuit");
+        require(batchIndex == batchesProcessed, "wrong batch order");
+        require(candidateIds.length == TALLY_CANDIDATES && voteCounts.length == TALLY_CANDIDATES, "candidate count mismatch");
 
         require(_pubSignals[0] == coordPubX && _pubSignals[1] == coordPubY, "tally coordinator key mismatch");
 
-        for (uint256 i = 0; i < TALLY_MAX_VOTES; i++) {
+        uint256 start = batchIndex * TALLY_BATCH_SIZE;
+        for (uint256 i = 0; i < TALLY_BATCH_SIZE; i++) {
             uint256 ct = 0;
             uint256 ex = 0;
             uint256 ey = 1;
-            if (i < votes.length) {
-                ct = abi.decode(votes[i].encryptedData, (uint256));
-                (ex, ey) = abi.decode(votes[i].voterPublicKey, (uint256, uint256));
+            if (start + i < votes.length) {
+                ct = abi.decode(votes[start + i].encryptedData, (uint256));
+                (ex, ey) = abi.decode(votes[start + i].voterPublicKey, (uint256, uint256));
             }
             require(_pubSignals[2 + i] == ct, "tally ciphertext mismatch");
-            require(_pubSignals[2 + TALLY_MAX_VOTES + i] == ex, "tally ephPubX mismatch");
-            require(_pubSignals[2 + 2 * TALLY_MAX_VOTES + i] == ey, "tally ephPubY mismatch");
+            require(_pubSignals[2 + TALLY_BATCH_SIZE + i] == ex, "tally ephPubX mismatch");
+            require(_pubSignals[2 + 2 * TALLY_BATCH_SIZE + i] == ey, "tally ephPubY mismatch");
         }
 
+        uint256 base = 2 + 3 * TALLY_BATCH_SIZE;
+        require(_pubSignals[base] == tallyCommit, "tally commitment mismatch");
+        bool isFinal = batchIndex + 1 == totalBatches();
+        require(_pubSignals[base + 2] == (isFinal ? 1 : 0), "tally final flag mismatch");
+
         uint256 totalCounted = 0;
-        for (uint256 i = 0; i < TALLY_CANDIDATES; i++) {
-            require(_pubSignals[2 + 3 * TALLY_MAX_VOTES + i] == voteCounts[i], "tally result mismatch");
-            totalCounted += voteCounts[i];
+        for (uint256 c = 0; c < TALLY_CANDIDATES; c++) {
+            require(_pubSignals[base + 3 + c] == voteCounts[c], "tally result mismatch");
+            totalCounted += voteCounts[c];
         }
-        // 모든 표가 집계에 포함되어야 한다 (회로 제약과 이중 방어)
-        require(totalCounted == votes.length, "tally total mismatch");
+        // 마지막 배치: 모든 표가 집계에 포함되어야 한다 (회로 제약과 이중 방어)
+        // 중간 배치: 결과는 0 이어야 한다 (회로가 강제, 중간 득표 비공개)
+        require(totalCounted == (isFinal ? votes.length : 0), "tally total mismatch");
 
         require(tallyVerifier.verifyProof(_pA, _pB, _pC, _pubSignals), "tally proof failed");
 
-        tallied = true;
-        for (uint256 i = 0; i < candidateIds.length; i++) {
-            tallyResult[candidateIds[i]] = voteCounts[i];
-            emit TallyRecorded(candidateIds[i], voteCounts[i]);
+        tallyCommit = _pubSignals[base + 1];
+        batchesProcessed = batchIndex + 1;
+        emit TallyBatchRecorded(batchIndex, tallyCommit);
+
+        if (isFinal) {
+            tallied = true;
+            for (uint256 i = 0; i < candidateIds.length; i++) {
+                tallyResult[candidateIds[i]] = voteCounts[i];
+                emit TallyRecorded(candidateIds[i], voteCounts[i]);
+            }
         }
     }
 

@@ -41,7 +41,8 @@
    - shared = `coord_private_key` * ephPub (BabyJubJub)
    - candidateID = ciphertext - Poseidon(shared.x, shared.y)
    - tally[candidateIndex]++
-3. ZKP② proof 생성 (`tally.circom`, snarkjs)
+3. 표를 50개씩 배치로 나눠 ZKP② proof 생성 (`tally.circom`, snarkjs, 병렬)
+4. 체인 `recordTallyBatch(k, ...)` 를 배치 순서대로 호출 (이미 기록된 배치는 건너뜀)
 4. DB:
    - `tally_results` INSERT
    - `elections.status = 'tallied'`
@@ -90,23 +91,28 @@
 
 [tally.circom](../../circuits/tally.circom) 입력:
 
+배치 k 입력:
 ```json
 {
-  "coordPriv": "...",                  // 비밀 입력 (회로가 coordPub 와 짝인지 검증)
+  "coordPriv": "...",                  // 비밀
+  "prevTally": ["..."x5], "prevSalt": "...", "newSalt": "...",   // 비밀
   "coordPubX": "...", "coordPubY": "...",
-  "ciphertexts": ["...", ...],          // 길이 = TALLY_CIRCUIT_VOTES (50)
+  "ciphertexts": ["...", ...],          // 50개 (배치 크기)
   "ephPubX": ["...", ...],
   "ephPubY": ["...", ...],
-  "adminResult": ["2", "1", "3", "0", "0"]   // 길이 = TALLY_CIRCUIT_CANDIDATES (5)
+  "prevCommit": "...", "newCommit": "...",   // Poseidon(누적득표[5], salt)
+  "isFinal": "0 | 1",
+  "result": ["20","20","20","0","0"]         // 마지막 배치에서만 값, 그 외 0
 }
 ```
-공개 신호 157개: `[coordPubX, coordPubY, ciphertext[50], ephPubX[50], ephPubY[50], result[5]]`
+공개 신호 160개: `[coordPubX, coordPubY, ciphertext[50], ephPubX[50], ephPubY[50], prevCommit, newCommit, isFinal, result[5]]`
+salt_k = Poseidon(coordPriv, k+1). 첫 배치 prevCommit = Poseidon(0,0,0,0,0,0).
 
 ### 패딩 정책
-실제 투표 수가 `TALLY_CIRCUIT_VOTES` 미만이면 `ciphertext=0, ephPub=(0,1)` (BabyJubJub 항등원) 로 패딩.
+마지막 배치의 남는 칸은 `ciphertext=0, ephPub=(0,1)` (BabyJubJub 항등원) 로 패딩.
 컨트랙트 `recordTally` 도 같은 값을 요구한다 (규약 고정, 환경변수 조정 없음).
 
-투표 수가 회로 사이즈를 **초과**하면 에러 (회로 자체를 더 큰 사이즈로 빌드해야 함).
+표 수 제한 없음 (배치 수 = ceil(표 수 / 50), 표 0개면 1배치).
 
 ---
 

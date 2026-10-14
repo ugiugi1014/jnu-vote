@@ -18,16 +18,18 @@ describe("VotingSystem", function () {
     const dummyPC = [0, 0];
     const COORD_X = 111n, COORD_Y = 222n;
 
-    // pubSignals layout (157 slots, Tally(50,5)):
+    // pubSignals layout (160 slots, 배치 Tally(50,5)):
     //   [0] coordPubX, [1] coordPubY
     //   [2..51] ciphertext, [52..101] ephPubX, [102..151] ephPubY  (padding: 0, 0, 1)
-    //   [152..156] voteCounts for 5 candidates
-    function buildPubSignals(voteCounts /* up to 5 */, votes = [] /* [{ct, x, y}] */) {
-        const arr = new Array(157).fill(0);
+    //   [152] prevCommit, [153] newCommit, [154] isFinal, [155..159] 최종 득표수
+    const INIT_COMMIT = 14408838593220040598588012778523101864903887657864399481915450526643617223637n;
+    function buildPubSignals(voteCounts /* up to 5 */, votes = [] /* [{ct, x, y}] */, opts = {}) {
+        const arr = new Array(160).fill(0);
         arr[0] = COORD_X; arr[1] = COORD_Y;
         for (let i = 0; i < 50; i++) arr[102 + i] = 1;
         votes.forEach((v, i) => { arr[2 + i] = v.ct; arr[52 + i] = v.x; arr[102 + i] = v.y; });
-        voteCounts.forEach((c, i) => { arr[152 + i] = c; });
+        arr[152] = opts.prev ?? INIT_COMMIT; arr[153] = opts.next ?? 777; arr[154] = opts.final === false ? 0 : 1;
+        voteCounts.forEach((c, i) => { arr[155 + i] = c; });
         return arr;
     }
 
@@ -166,8 +168,7 @@ describe("VotingSystem", function () {
         await system.connect(electionAdmin).closeElection();
 
         const pubSignals = buildPubSignals([0, 0, 0]); // votes=0 → voteCount 도 0
-        await system.connect(electionAdmin).recordTally(
-            [101, 102, 103, 104, 105], [0, 0, 0, 0, 0],
+        await system.connect(electionAdmin).recordTallyBatch(0, [101, 102, 103, 104, 105], [0, 0, 0, 0, 0],
             dummyPA, dummyPB, dummyPC, pubSignals
         );
         expect(await system.getVoteCount(101)).to.equal(0);
@@ -179,8 +180,7 @@ describe("VotingSystem", function () {
         await openConfigured();
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
-            system.connect(electionAdmin).recordTally(
-                [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
+            system.connect(electionAdmin).recordTallyBatch(0, [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -191,8 +191,7 @@ describe("VotingSystem", function () {
         await system.connect(electionAdmin).closeElection();
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
-            system.connect(electionAdmin).recordTally(
-                [1, 2, 3], [10, 5],   // 길이 불일치
+            system.connect(electionAdmin).recordTallyBatch(0, [1, 2, 3], [10, 5],   // 길이 불일치
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -203,8 +202,7 @@ describe("VotingSystem", function () {
         await system.connect(electionAdmin).closeElection();
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
-            system.connect(electionAdmin).recordTally(
-                [1, 2], [10, 5],     // 후보 2명 (3명 고정 위반)
+            system.connect(electionAdmin).recordTallyBatch(0, [1, 2], [10, 5],     // 후보 2명 (3명 고정 위반)
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -215,8 +213,7 @@ describe("VotingSystem", function () {
         await system.connect(electionAdmin).closeElection();
         const pubSignals = buildPubSignals([10, 5, 0]);  // pubSignals 는 [10,5,0]
         await expect(
-            system.connect(electionAdmin).recordTally(
-                [1, 2, 3, 4, 5], [99, 5, 0, 0, 0],   // voteCounts[0]=99 ≠ pubSignals[20]=10
+            system.connect(electionAdmin).recordTallyBatch(0, [1, 2, 3, 4, 5], [99, 5, 0, 0, 0],   // voteCounts[0]=99 ≠ pubSignals[20]=10
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -228,8 +225,7 @@ describe("VotingSystem", function () {
         await system.connect(electionAdmin).closeElection();
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
-            system.connect(electionAdmin).recordTally(
-                [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
+            system.connect(electionAdmin).recordTallyBatch(0, [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -240,8 +236,7 @@ describe("VotingSystem", function () {
         await system.connect(electionAdmin).closeElection();
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
-            system.connect(voter1).recordTally(
-                [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
+            system.connect(voter1).recordTallyBatch(0, [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -271,7 +266,7 @@ describe("VotingSystem", function () {
         ).to.be.revertedWith("value out of field");
     });
 
-    it("득표 합계가 투표 수와 다르면 recordTally 실패 (표 누락 차단)", async function () {
+    it("득표 합계가 투표 수와 다르면 recordTallyBatch 실패 (표 누락 차단)", async function () {
         await openConfigured();
         await system.connect(voter1).castVote(dummyNullifier, enc(7), pub(9, 11), dummyPA, dummyPB, dummyPC);
         const n2 = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("secret2"));
@@ -281,28 +276,39 @@ describe("VotingSystem", function () {
         const ids = [0, 1, 2, 3, 4];
 
         await expect(
-            system.connect(electionAdmin).recordTally(ids, [1, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 0, 0, 0, 0], votes))
+            system.connect(electionAdmin).recordTallyBatch(0, ids, [1, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 0, 0, 0, 0], votes))
         ).to.be.revertedWith("tally total mismatch");
 
         await expect(
-            system.connect(electionAdmin).recordTally(ids, [1, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 0, 0, 0, 0], votes.slice(0, 1)))
+            system.connect(electionAdmin).recordTallyBatch(0, ids, [1, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 0, 0, 0, 0], votes.slice(0, 1)))
         ).to.be.revertedWith("tally ciphertext mismatch");
 
-        await system.connect(electionAdmin).recordTally(ids, [1, 1, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 1, 0, 0, 0], votes));
+        await system.connect(electionAdmin).recordTallyBatch(0, ids, [1, 1, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 1, 0, 0, 0], votes));
         expect(await system.getVoteCount(1)).to.equal(1);
 
         await expect(
-            system.connect(electionAdmin).recordTally(ids, [1, 1, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 1, 0, 0, 0], votes))
+            system.connect(electionAdmin).recordTallyBatch(0, ids, [1, 1, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 1, 0, 0, 0], votes))
         ).to.be.revertedWith("already tallied");
     });
 
-    it("코디네이터 공개키가 다르면 recordTally 실패", async function () {
+    it("코디네이터 공개키가 다르면 recordTallyBatch 실패", async function () {
         await openConfigured();
         await system.connect(electionAdmin).closeElection();
         const ps = buildPubSignals([0, 0, 0, 0, 0]);
         ps[0] = 999;
         await expect(
-            system.connect(electionAdmin).recordTally([0, 1, 2, 3, 4], [0, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, ps)
+            system.connect(electionAdmin).recordTallyBatch(0, [0, 1, 2, 3, 4], [0, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, ps)
         ).to.be.revertedWith("tally coordinator key mismatch");
+    });
+
+    it("배치 순서를 건너뛰면 실패, 이전 커밋먼트와 이어지지 않으면 실패", async function () {
+        await openConfigured();
+        await system.connect(electionAdmin).closeElection();
+        await expect(
+            system.connect(electionAdmin).recordTallyBatch(1, [0, 1, 2, 3, 4], [0, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([0, 0, 0, 0, 0]))
+        ).to.be.revertedWith("wrong batch order");
+        await expect(
+            system.connect(electionAdmin).recordTallyBatch(0, [0, 1, 2, 3, 4], [0, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([0, 0, 0, 0, 0], [], { prev: 1 }))
+        ).to.be.revertedWith("tally commitment mismatch");
     });
 });
