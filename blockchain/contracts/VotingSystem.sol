@@ -26,6 +26,8 @@ interface ITallyVerifier {
 contract VotingSystem is Initializable, OwnableUpgradeable {
     uint256 private constant TALLY_MAX_VOTES = 50;
     uint256 private constant TALLY_CANDIDATES = 5;
+    uint256 private constant SNARK_SCALAR_FIELD =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
     VotingToken public votingToken;
     IVoteVerifier public voteVerifier;
@@ -117,6 +119,15 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
     ) external whenElectionOpen {
         require(votingToken.isTokenValid(msg.sender), "voting token required");
         require(!nullifiers[nullifier], "duplicate nullifier");
+        // tally 회로 용량(TALLY_MAX_VOTES)을 넘는 표가 저장되면 recordTally가 영구 revert -> 개표 불능
+        require(votes.length < TALLY_MAX_VOTES, "tally capacity reached");
+
+        // 암호문 형식을 투표 시점에 검증한다.
+        // - 형식이 깨진 데이터가 저장되면 recordTally의 abi.decode가 영구 revert -> 개표 불능(DoS)
+        // - (0,0)은 tally 회로에서 패딩 슬롯 표식이므로 실제 표로 쓸 수 없다
+        (uint256 ciphertext, uint256 nonce) = abi.decode(encryptedData, (uint256, uint256));
+        require(ciphertext != 0 || nonce != 0, "invalid ciphertext");
+        require(ciphertext < SNARK_SCALAR_FIELD && nonce < SNARK_SCALAR_FIELD, "ciphertext out of field");
 
         uint[1] memory pubSignals;
         pubSignals[0] = uint256(nullifier);
@@ -151,9 +162,13 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
             }
         }
 
+        uint256 totalCounted = 0;
         for (uint256 i = 0; i < TALLY_CANDIDATES; i++) {
             require(_pubSignals[2 * TALLY_MAX_VOTES + i] == voteCounts[i], "tally result mismatch");
+            totalCounted += voteCounts[i];
         }
+        // 모든 표가 집계에 포함되어야 한다 (표 누락 차단, tally 회로 제약과 이중 방어)
+        require(totalCounted == votes.length, "tally total mismatch");
 
         require(tallyVerifier.verifyProof(_pA, _pB, _pC, _pubSignals), "tally proof failed");
 

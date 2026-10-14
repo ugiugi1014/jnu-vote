@@ -79,3 +79,33 @@
 ## 영향받은 다이어그램
 
 `02_seq_vote` · `04_seq_admin` · `05_contract_structure` · `08_election_state` · `09_data_model_erd` · `09a_data_model_worlds`
+---
+
+## 집계 무결성 보완 (branch: fix/tally-integrity)
+
+배경: ZKP②(tally proof)는 "관리자를 믿지 않아도 집계가 맞다"를 보장해야 하는데, 기존 회로/컨트랙트에서는 아래 공격이 가능했다.
+
+### 발견한 문제
+1. **표 누락 공격**: tally.circom의 `sharedKeys`는 비공개 입력이고 ECDH 결과인지 검증하지 않는다. 관리자가 특정 표에 가짜 공유키를 넣으면 그 표는 거대값으로 복호화되어 어느 후보에도 집계되지 않고, 증명은 정상 통과한다. (witness 테스트로 재현: 기존 회로 PASS)
+2. **비트 분해 aliasing**: `Num2Bits(254)`는 x와 x+p 두 가지 분해를 허용한다. 증명자가 다른 분해를 고르면 XOR 복호화 결과가 바뀔 수 있다 (일부 표에서 후보 변경 가능).
+3. **개표 DoS (컨트랙트)**: castVote가 `encryptedData` 형식을 확인하지 않아, 형식이 깨진 데이터 1건만 들어와도 recordTally의 `abi.decode`가 영구 revert. 필드 범위(p) 이상 값이나 51번째 표도 같은 결과.
+
+### 수정
+- `circuits/tally.circom`
+  - 실제 표(nonce, ciphertext가 모두 0이 아닌 슬롯)는 반드시 후보 0~4 중 정확히 하나로 복호화되어야 한다는 제약 추가. 패딩 슬롯(0,0)만 예외.
+  - `Num2Bits(254)` -> `Num2Bits_strict()`.
+  - 공개 입력 개수/순서 변경 없음 (여전히 105개) -> 백엔드/프론트 코드 수정 불필요.
+  - constraint 수: 50,600 -> 76,950.
+- `blockchain/contracts/VotingSystem.sol`
+  - castVote: `abi.decode(uint256,uint256)` 형식 검증, (0,0) 거절, 필드 범위 검사, 용량(50표) 초과 거절.
+  - recordTally: 득표 합계 == 투표 수 검사 (회로 제약과 이중 방어).
+- 테스트: `circuits/test/tally_integrity.js`(회로 공격 재현), `blockchain/test/VotingSystem.test.js`(105 슬롯/5후보 레이아웃으로 정리 + 무결성 테스트 4개).
+
+### 재배포 시 필요한 작업 [구현필요]
+1. `circom circuits/tally.circom --r1cs --wasm -o zkp/build`
+2. 기존에 쓰던 ptau(2^17 이상)로 `snarkjs groth16 setup` -> `zkey contribute` -> `zkey export verificationkey` -> `zkey export solidityverifier` (TallyVerifier.sol 교체)
+3. VotingSystem impl, TallyVerifier, ElectionFactory 재배포 (CLAUDE.md 재배포 순서 참고), FACTORY_ADDRESS / ABI 교체
+
+### 남은 한계 (다음 단계)
+- 투표자가 일부러 유효하지 않은 후보 번호를 암호화해 넣으면 tally 회로를 만족시킬 수 없어 개표가 막힌다. ZKP①(voteProof)이 암호문과 묶여 있지 않기 때문. -> 2단계(BabyJubJub ECDH + voteProof 내 암호화 검증)에서 해결.
+- 개표 용량 50표 -> 3단계(배치 집계 + 공개 입력 해시 압축)에서 해결.

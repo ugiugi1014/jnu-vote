@@ -7,21 +7,22 @@ describe("VotingSystem", function () {
     let deployer, electionAdmin, voter1, voter2, voter3, other;
 
     const dummyNullifier  = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("secret1"));
-    const dummyEncrypted  = hre.ethers.toUtf8Bytes("encrypted_vote_data");
+    // 컨트랙트가 castVote 시 abi.decode(uint256 ciphertext, uint256 nonce) 형식을 검증하므로 실제 형식으로 인코딩
+    const enc = (ct, nonce) => hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [ct, nonce]);
+    const dummyEncrypted  = enc(7, 9);
     const dummyPubKey     = hre.ethers.toUtf8Bytes("voter_public_key");
     const dummyPA = [0, 0];
     const dummyPB = [[0, 0], [0, 0]];
     const dummyPC = [0, 0];
 
-    // pubSignals layout (23 slots):
-    //   [0..9]   nonces
-    //   [10..19] ciphertexts
-    //   [20..22] voteCounts for 3 candidates
-    function buildPubSignals(voteCounts /* [c0,c1,c2] */) {
-        const arr = new Array(23).fill(0);
-        arr[20] = voteCounts[0];
-        arr[21] = voteCounts[1];
-        arr[22] = voteCounts[2];
+    // pubSignals layout (105 slots, Tally(50,5)):
+    //   [0..49]   nonces
+    //   [50..99]  ciphertexts
+    //   [100..104] voteCounts for 5 candidates
+    function buildPubSignals(voteCounts /* up to 5 */, votes = [] /* [{ct, nonce}] */) {
+        const arr = new Array(105).fill(0);
+        votes.forEach((v, i) => { arr[i] = v.nonce; arr[50 + i] = v.ct; });
+        voteCounts.forEach((c, i) => { arr[100 + i] = c; });
         return arr;
     }
 
@@ -149,7 +150,7 @@ describe("VotingSystem", function () {
 
         const pubSignals = buildPubSignals([0, 0, 0]); // votes=0 → voteCount 도 0
         await system.connect(electionAdmin).recordTally(
-            [101, 102, 103], [0, 0, 0],
+            [101, 102, 103, 104, 105], [0, 0, 0, 0, 0],
             dummyPA, dummyPB, dummyPC, pubSignals
         );
         expect(await system.getVoteCount(101)).to.equal(0);
@@ -162,7 +163,7 @@ describe("VotingSystem", function () {
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
             system.connect(electionAdmin).recordTally(
-                [1, 2, 3], [0, 0, 0],
+                [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -198,7 +199,7 @@ describe("VotingSystem", function () {
         const pubSignals = buildPubSignals([10, 5, 0]);  // pubSignals 는 [10,5,0]
         await expect(
             system.connect(electionAdmin).recordTally(
-                [1, 2, 3], [99, 5, 0],   // voteCounts[0]=99 ≠ pubSignals[20]=10
+                [1, 2, 3, 4, 5], [99, 5, 0, 0, 0],   // voteCounts[0]=99 ≠ pubSignals[20]=10
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -211,7 +212,7 @@ describe("VotingSystem", function () {
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
             system.connect(electionAdmin).recordTally(
-                [1, 2, 3], [0, 0, 0],
+                [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
@@ -223,9 +224,50 @@ describe("VotingSystem", function () {
         const pubSignals = buildPubSignals([0, 0, 0]);
         await expect(
             system.connect(voter1).recordTally(
-                [1, 2, 3], [0, 0, 0],
+                [1, 2, 3, 4, 5], [0, 0, 0, 0, 0],
                 dummyPA, dummyPB, dummyPC, pubSignals
             )
         ).to.be.reverted;
+    });
+
+    // ───────────── 집계 무결성 (fix/tally-integrity) ─────────────
+
+    it("형식이 깨진 암호문은 castVote 단계에서 거절된다 (개표 DoS 방지)", async function () {
+        await system.connect(electionAdmin).openElection();
+        await expect(
+            system.connect(voter1).castVote(dummyNullifier, hre.ethers.toUtf8Bytes("garbage"), dummyPubKey, dummyPA, dummyPB, dummyPC)
+        ).to.be.reverted;
+    });
+
+    it("(0,0) 암호문은 패딩 표식이므로 거절된다", async function () {
+        await system.connect(electionAdmin).openElection();
+        await expect(
+            system.connect(voter1).castVote(dummyNullifier, enc(0, 0), dummyPubKey, dummyPA, dummyPB, dummyPC)
+        ).to.be.revertedWith("invalid ciphertext");
+    });
+
+    it("필드 범위를 넘는 암호문은 거절된다", async function () {
+        const P = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+        await system.connect(electionAdmin).openElection();
+        await expect(
+            system.connect(voter1).castVote(dummyNullifier, enc(P, 1), dummyPubKey, dummyPA, dummyPB, dummyPC)
+        ).to.be.revertedWith("ciphertext out of field");
+    });
+
+    it("득표 합계가 투표 수와 다르면 recordTally 실패 (표 누락 차단)", async function () {
+        await system.connect(electionAdmin).openElection();
+        await system.connect(voter1).castVote(dummyNullifier, enc(7, 9), dummyPubKey, dummyPA, dummyPB, dummyPC);
+        const n2 = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("secret2"));
+        await system.connect(voter3).castVote(n2, enc(8, 10), dummyPubKey, dummyPA, dummyPB, dummyPC);
+        await system.connect(electionAdmin).closeElection();
+        const votes = [{ ct: 7, nonce: 9 }, { ct: 8, nonce: 10 }];
+        const ids = [0, 1, 2, 3, 4];
+
+        await expect(
+            system.connect(electionAdmin).recordTally(ids, [1, 0, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 0, 0, 0, 0], votes))
+        ).to.be.revertedWith("tally total mismatch");
+
+        await system.connect(electionAdmin).recordTally(ids, [1, 1, 0, 0, 0], dummyPA, dummyPB, dummyPC, buildPubSignals([1, 1, 0, 0, 0], votes));
+        expect(await system.getVoteCount(1)).to.equal(1);
     });
 });

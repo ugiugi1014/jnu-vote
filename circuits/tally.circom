@@ -20,6 +20,8 @@ template Tally(n, numCandidates) {
     signal votes[n][numCandidates];
     signal tally[numCandidates];
     signal tallyAcc[numCandidates][n+1];
+    signal validCount[n][numCandidates+1];
+    signal isPad[n];
 
     // 컴포넌트 선언
     component pos[n];
@@ -27,6 +29,8 @@ template Tally(n, numCandidates) {
     component n2b_ct[n];
     component b2n[n];
     component eq[n][numCandidates];
+    component zNonce[n];
+    component zCt[n];
 
     for (var i = 0; i < n; i++) {
         // 1. keystream 재구성
@@ -36,10 +40,12 @@ template Tally(n, numCandidates) {
         keystreams[i] <== pos[i].out;
 
         // 2. 비트 분해
-        n2b_ks[i] = Num2Bits(254);
+        // Num2Bits(254)는 x와 x+p 두 가지 비트 분해를 허용(aliasing)하므로
+        // 증명자가 다른 분해를 골라 복호화 결과를 바꿀 수 있다 -> strict 버전 사용
+        n2b_ks[i] = Num2Bits_strict();
         n2b_ks[i].in <== keystreams[i];
 
-        n2b_ct[i] = Num2Bits(254);
+        n2b_ct[i] = Num2Bits_strict();
         n2b_ct[i].in <== ciphertexts[i];
 
         // 3. XOR (254비트 전체)
@@ -62,9 +68,24 @@ template Tally(n, numCandidates) {
             eq[i][c].in[1] <== c;
             votes[i][c] <== eq[i][c].out;
         }
+
+        // 6. 무결성: 실제 표는 반드시 후보 0~(numCandidates-1) 중 하나로 복호화되어야 한다.
+        //    (관리자가 잘못된 공유키를 넣어 표를 버리는 공격 차단)
+        //    패딩 슬롯(nonce=0, ciphertext=0)만 어느 후보에도 해당하지 않을 수 있다.
+        zNonce[i] = IsZero();
+        zNonce[i].in <== nonces[i];
+        zCt[i] = IsZero();
+        zCt[i].in <== ciphertexts[i];
+        isPad[i] <== zNonce[i].out * zCt[i].out;
+
+        validCount[i][0] <== 0;
+        for (var c = 0; c < numCandidates; c++) {
+            validCount[i][c+1] <== validCount[i][c] + votes[i][c];
+        }
+        validCount[i][numCandidates] === 1 - isPad[i];
     }
 
-    // 6. 득표 합산 및 관리자 집계 결과와 비교
+    // 7. 득표 합산 및 관리자 집계 결과와 비교
     for (var c = 0; c < numCandidates; c++) {
         tallyAcc[c][0] <== 0;
         for (var i = 0; i < n; i++) {
