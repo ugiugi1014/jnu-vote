@@ -6,6 +6,7 @@ import VoteResultPage from "./pages/VoteResultPage";
 import AdminPage from "./pages/AdminPage";
 import UploadPage from "./pages/UploadPage";
 import DemoGuide from "./components/DemoGuide";
+import HowItWorksPage from "./pages/HowItWorksPage";
 import "./styles/global.css";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 const AUTH_STORAGE_KEY = "jnuVote.auth";
@@ -170,10 +171,14 @@ export default function App() {
   };
 
   const handleGoUpload = () => setPage("upload");
+  // 작동 원리 화면: 어디서 열었든 돌아갈 곳을 기억해 둔다
+  const [returnPage, setReturnPage] = useState("login");
+  const openHowItWorks = () => { setReturnPage(page === "howitworks" ? returnPage : page); setPage("howitworks"); };
 
   return (
     <>
-      {page === "login" && <LoginPage onLogin={handleLogin} />}
+      {page === "login" && <LoginPage onLogin={handleLogin} onHowItWorks={openHowItWorks} />}
+      {page === "howitworks" && <HowItWorksPage onBack={() => setPage(returnPage)} />}
       {page === "admin" && <AdminPage studentId={studentId} onLogout={handleLogout} token={token} />}
       {page === "upload" && (
         <UploadPage
@@ -206,7 +211,7 @@ export default function App() {
         />
       )}
       {page === "result" && <VoteResultPage vote={currentVote} onBack={handleBack} />}
-      <DemoGuide />
+      {page !== "howitworks" && <DemoGuide onHowItWorks={openHowItWorks} />}
     </>
   );
 }

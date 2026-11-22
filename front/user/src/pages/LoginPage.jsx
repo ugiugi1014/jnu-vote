@@ -14,7 +14,7 @@ async function readApiError(res, fallback) {
   }
 }
 
-export default function LoginPage({ onLogin }) {
+export default function LoginPage({ onLogin, onHowItWorks }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState(1);
@@ -185,6 +185,7 @@ export default function LoginPage({ onLogin }) {
         )}
 
         <p className="login-footer">인증 후 인앱 지갑이 자동으로 재생성됩니다.</p>
+        {onHowItWorks && <button className="login-howitworks" onClick={onHowItWorks}>작동 원리 보기</button>}
       </div>
     </div>
   );

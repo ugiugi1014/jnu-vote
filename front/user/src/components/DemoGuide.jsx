@@ -38,7 +38,7 @@ function Account({ email, label }) {
   );
 }
 
-export default function DemoGuide() {
+export default function DemoGuide({ onHowItWorks }) {
   const [info, setInfo] = useState(null);
   // 넓은 화면은 오른쪽에 붙여 두고 본문을 옆으로 민다 (버튼을 가리지 않게). 좁은 화면은 접은 채 시작
   const [open, setOpen] = useState(() => globalThis.innerWidth >= 1100);
@@ -84,6 +84,7 @@ export default function DemoGuide() {
             {EXTRA.map((s, i) => <li key={i}>{s}</li>)}
           </ul>
           <button className="demo-verify-btn" onClick={() => setVerifyOpen(true)}>체인 검증 보기</button>
+          {onHowItWorks && <button className="demo-verify-btn demo-howitworks-btn" onClick={onHowItWorks}>작동 원리 보기 (공격 시도 포함)</button>}
           <p className="demo-note">로컬 테스트 체인과 데모 데이터입니다. 실제 메일·재학증명 확인은 하지 않습니다.</p>
         </aside>
       )}
