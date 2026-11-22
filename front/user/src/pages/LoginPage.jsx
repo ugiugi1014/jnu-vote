@@ -2,7 +2,7 @@ import { useState } from "react";
 import "../styles/LoginPage.css";
 import { createWallet } from "../services/walletService.js";
 
-const LOGO = "/src/jejun.png";
+const LOGO = "/jejun.png";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 async function readApiError(res, fallback) {
@@ -19,6 +19,7 @@ export default function LoginPage({ onLogin }) {
   const [code, setCode] = useState("");
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [demoNotice, setDemoNotice] = useState(false);
 
   const normalizedEmail = email.trim().toLowerCase();
   const isEmailValid = normalizedEmail.length > 0;
@@ -60,6 +61,12 @@ export default function LoginPage({ onLogin }) {
         throw new Error(await readApiError(res, "인증 코드 발송에 실패했습니다."));
       }
 
+      // 데모 모드: 메일 대신 응답으로 받은 코드를 바로 채운다
+      const sent = await res.json().catch(() => ({}));
+      if (sent.demo_code) {
+        setCode(sent.demo_code);
+        setDemoNotice(true);
+      }
       setStep(2);
     } catch (err) {
       alert(err.message);
@@ -152,7 +159,8 @@ export default function LoginPage({ onLogin }) {
               disabled={isLoading}
               autoComplete="one-time-code"
             />
-            <p className="form-hint" onClick={() => { setStep(1); setCode(""); }}>
+            {demoNotice && <p className="form-hint">데모 모드: 인증 코드가 자동으로 입력됐습니다.</p>}
+            <p className="form-hint" onClick={() => { setStep(1); setCode(""); setDemoNotice(false); }}>
               이메일을 잘못 입력했나요? <span className="form-hint-link">다시 입력</span>
             </p>
           </div>

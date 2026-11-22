@@ -128,6 +128,15 @@ VotingSystem.recordTallyBatch(batchIndex, ..., uint[160]) 가 배치 순서, 저
 - **가스 모델**: fundVoterGas는 드립 방식. 운영은 릴레이어/메타트랜잭션 고려.
 - **CLAUDE.md/익명성 모델 서술**: 과거 "다른 지갑 동일인→nullifier 동일"은 부정확(위 키 설계 참고).
 
+## 데모 (demo/)
+
+- `demo/docker-compose.yml`: anvil(1초 블록) + mysql + deployer(forge create 로 일괄 배포, `demo/foundry` 전용 설정) + server(`DEMO_MODE=1`) + seed(`server/scripts/demoSeed.js`) + front(vite preview)
+- `DEMO_MODE=1`: 메일 대신 인증 코드를 응답(`demo_code`)으로, `demo/accounts.json` 계정만 허용, 데모 학생 재학 인증 승인, `GET /demo/info` → 화면 '체험 안내' 패널
+- 화면: `components/DemoGuide.jsx`(안내·계정), `components/ChainVerifyPanel.jsx`(체인에서 직접 읽는 검증 화면). 데모 모드가 아니면 안 보임
+- 자동 점검: `front/user/scripts/demo-e2e.mjs [--tally]`
+- tally zkey 는 2026-11-22 로컬 ptau 로 재생성(기존 키 분실). TallyVerifier.sol·tally_verification_key.json·fixtures/tally_e2e.json 함께 교체. `--O2` 로 컴파일해야 129,140 제약(2^17 에 들어감, O1 은 148,511)
+- 로컬 체인에서 블록이 즉시 생기면 ethers 의 nonce 캐시(250ms) 때문에 연속 트랜잭션이 nonce too low 로 실패 → anvil `--block-time 1`
+
 ## 테스트
 
 - 컨트랙트: `cd blockchain/foundry && forge test` (forge-std 는 lib/ 에 설치, `npm install` 은 blockchain/ 에서)

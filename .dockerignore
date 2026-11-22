@@ -1,0 +1,12 @@
+**/node_modules
+.git
+Claude outputs
+front/user/dist
+zkp
+blockchain/foundry/out
+blockchain/foundry/lib
+blockchain/foundry/cache
+demo/foundry/out
+demo/foundry/cache
+**/*.ptau
+server/uploads

@@ -30,6 +30,9 @@ function generateCode() {
   return crypto.randomInt(100000, 1000000).toString();
 }
 
+// 데모 모드 (DEMO_MODE=1): 메일을 보내지 않고 인증 코드를 응답에 담아 준다. 데모 계정만 허용.
+const { DEMO_MODE, isDemoEmail } = require("../demo");
+
 // 관리자 이메일 화이트리스트 (.env의 ADMIN_EMAILS 쉼표 구분)
 function isAdminEmail(email) {
   const list = (process.env.ADMIN_EMAILS || "")
@@ -56,6 +59,10 @@ router.post("/send-code", async (req, res) => {
   try {
     const { email } = req.body;
 
+    if (DEMO_MODE && (!email || (!isDemoEmail(email) && !isAdminEmail(email)))) {
+      return res.status(400).json({ message: "데모에서는 안내된 데모 계정만 사용할 수 있습니다." });
+    }
+
     // 이메일 형식 확인: @stu.jejunu.ac.kr 도메인만 허용 (관리자 화이트리스트는 예외)
     if (!email || (!email.endsWith("@stu.jejunu.ac.kr") && !isAdminEmail(email))) {
       return res.status(400).json({ message: "제주대학교 학생 이메일(@stu.jejunu.ac.kr)만 사용 가능합니다." });
@@ -73,7 +80,7 @@ router.post("/send-code", async (req, res) => {
       "SELECT id FROM auth_codes WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 MINUTE) LIMIT 1",
       [email]
     );
-    if (recent.length > 0) {
+    if (recent.length > 0 && !DEMO_MODE) {
       return res.status(429).json({ message: "1분 후에 다시 시도해주세요." });
     }
 
@@ -88,6 +95,11 @@ router.post("/send-code", async (req, res) => {
       "INSERT INTO auth_codes (email, code, expires_at) VALUES (?, ?, ?)",
       [email, code, expiresAt]
     );
+
+    if (DEMO_MODE) {
+      // 데모: 메일 대신 화면에 코드를 보여준다
+      return res.json({ message: "데모 모드: 인증 코드가 자동 입력됩니다.", demo_code: code });
+    }
 
     // 이메일 발송
     await transporter.sendMail({

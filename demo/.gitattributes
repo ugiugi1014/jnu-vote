@@ -1,0 +1,8 @@
+# 컨테이너(리눅스)에서 실행하는 파일은 줄바꿈을 LF 로 고정
+*.sh text eol=lf
+*.sql text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+*.env text eol=lf
+*.yml text eol=lf
+*.cmd text eol=crlf

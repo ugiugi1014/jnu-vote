@@ -10,8 +10,7 @@ const REQUIRED_ENV = [
   "DB_PASSWORD",
   "DB_NAME",
   "JWT_SECRET",
-  "MAIL_USER",
-  "MAIL_PASS",
+  ...(process.env.DEMO_MODE === "1" ? [] : ["MAIL_USER", "MAIL_PASS"]), // 데모는 메일을 보내지 않음
 ];
 const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
 if (missingEnv.length > 0) {
@@ -58,6 +57,14 @@ app.get("/health", async (req, res) => {
     console.error("health check DB error:", err);
     res.status(503).json({ status: "db_down" });
   }
+});
+
+// 데모 안내 (DEMO_MODE=1 일 때만 내용이 있음): 화면의 체험 안내 배너가 읽는다
+app.get(["/demo/info", "/api/demo/info"], (req, res) => {
+  const { DEMO_MODE, loadDemoAccounts } = require("./demo");
+  const a = DEMO_MODE ? loadDemoAccounts() : null;
+  if (!a) return res.json({ enabled: false });
+  res.json({ enabled: true, admin: a.admin, students: a.students, outsider: a.outsider });
 });
 
 // 라우터 연결

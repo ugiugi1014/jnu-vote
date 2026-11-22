@@ -1,0 +1,32 @@
+{
+  "admin": { "email": "admin@demo.jnu", "label": "선거 관리자" },
+  "students": [
+    { "email": "20260001@stu.jejunu.ac.kr", "student_id": "20260001", "label": "학생 1" },
+    { "email": "20260002@stu.jejunu.ac.kr", "student_id": "20260002", "label": "학생 2" },
+    { "email": "20260003@stu.jejunu.ac.kr", "student_id": "20260003", "label": "학생 3" },
+    { "email": "20260004@stu.jejunu.ac.kr", "student_id": "20260004", "label": "학생 4" },
+    { "email": "20260005@stu.jejunu.ac.kr", "student_id": "20260005", "label": "학생 5" }
+  ],
+  "outsider": { "email": "20269999@stu.jejunu.ac.kr", "student_id": "20269999", "label": "명단에 없는 학생 (거절 확인용)" },
+  "elections": [
+    {
+      "title": "2026 총학생회장 선거 (데모)",
+      "description": "체험용 선거입니다. 학생 1~5만 투표할 수 있습니다.",
+      "start": true,
+      "candidates": [
+        { "name": "기호 0 김한라", "description": "컴퓨터공학과" },
+        { "name": "기호 1 이백록", "description": "경영학과" },
+        { "name": "기호 2 박돌담", "description": "해양생명과학과" }
+      ]
+    },
+    {
+      "title": "학과 대표 선거 (예정, 데모)",
+      "description": "아직 시작 전인 선거입니다. 투표 키를 미리 등록하거나 다시 등록해 볼 수 있습니다.",
+      "start": false,
+      "candidates": [
+        { "name": "기호 0 오름", "description": "3학년" },
+        { "name": "기호 1 바당", "description": "2학년" }
+      ]
+    }
+  ]
+}

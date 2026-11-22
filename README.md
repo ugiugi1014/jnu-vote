@@ -3,6 +3,10 @@ jnu blockchain e-voting system
 
 제주대학교 캡스톤. 이더리움 Sepolia 테스트넷 위에서 동작하는 영지식 증명(ZKP) 기반 익명 전자투표 시스템.
 
+## 데모
+
+로컬 체인·DB·서버·화면을 명령 하나로 띄워서 투표부터 개표 검증까지 체험할 수 있다. [demo/README.md](demo/README.md) 참고 (`demo\start.cmd` / `sh demo/start.sh`).
+
 ## 2026-10 보완 사항
 
 자세한 설계, 검증 결과, 수치는 [Change.md](Change.md) 참고.

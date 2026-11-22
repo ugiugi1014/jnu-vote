@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "../styles/AdminPage.css";
 
-const LOGO = "/src/jejun.png";
+const LOGO = "/jejun.png";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 const STATUS_LABEL = {

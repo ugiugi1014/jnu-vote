@@ -12,7 +12,7 @@ import VotingSystemABI from '../abi/VotingSystem.json';
 //import { CANDIDATES } from "../data/mockData"; //후보자 목록 mock 데이터
 import "../styles/VoteDetailPage.css";
 
-const LOGO = "/src/jejun.png";
+const LOGO = "/jejun.png";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const ELIGIBILITY_REASON = {

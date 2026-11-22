@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import "../styles/UploadPage.css";
 
-const LOGO = "/src/jejun.png";
+const LOGO = "/jejun.png";
 
 function Header({ studentId, onLogout }) {
   return (

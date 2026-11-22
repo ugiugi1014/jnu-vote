@@ -3,7 +3,7 @@ import { Icon } from "../components/Icons";
 //import { TABS, VOTES } from "../data/mockData";
 import "../styles/VoteListPage.css";
 
-const LOGO = "/src/jejun.png";
+const LOGO = "/jejun.png";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function formatDateTime(value) {
@@ -101,7 +101,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
           : votes.map(vote => (
             <div className="vote-card" key={vote.id}>
               <div className="vote-card-top">
-                <span className="badge badge-outline">{vote.category}</span>
+                {vote.category && <span className="badge badge-outline">{vote.category}</span>}
                 {vote.status === "active" && <span className="badge badge-active">진행중</span>}
                 {vote.status === "closed"  && <span className="badge badge-ended">종료</span>}
                 {vote.voted              && <span className="badge badge-voted">투표 완료</span>}

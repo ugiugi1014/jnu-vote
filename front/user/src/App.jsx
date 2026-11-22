@@ -5,6 +5,7 @@ import VoteDetailPage from "./pages/VoteDetailPage";
 import VoteResultPage from "./pages/VoteResultPage";
 import AdminPage from "./pages/AdminPage";
 import UploadPage from "./pages/UploadPage";
+import DemoGuide from "./components/DemoGuide";
 import "./styles/global.css";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 const AUTH_STORAGE_KEY = "jnuVote.auth";
@@ -205,6 +206,7 @@ export default function App() {
         />
       )}
       {page === "result" && <VoteResultPage vote={currentVote} onBack={handleBack} />}
+      <DemoGuide />
     </>
   );
 }

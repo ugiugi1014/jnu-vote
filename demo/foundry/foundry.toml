@@ -1,0 +1,8 @@
+# 데모 배포 전용 Foundry 설정: 컨트랙트만 빌드한다 (테스트·forge-std 불필요)
+[profile.default]
+src = "../../blockchain/contracts"
+out = "out"
+cache_path = "cache"
+libs = ["../../blockchain/node_modules"]
+solc = "0.8.28"
+remappings = ["@openzeppelin/=../../blockchain/node_modules/@openzeppelin/"]
