@@ -463,6 +463,34 @@
   },
   {
     "type": "function",
+    "name": "replaceVoter",
+    "inputs": [
+      {
+        "name": "leafIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "oldCommitment",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "newCommitment",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "siblings",
+        "type": "uint256[16]",
+        "internalType": "uint256[16]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "scope",
     "inputs": [],
     "outputs": [
@@ -785,6 +813,37 @@
       },
       {
         "name": "commitment",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "root",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VoterReplaced",
+    "inputs": [
+      {
+        "name": "leafIndex",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "oldCommitment",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newCommitment",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

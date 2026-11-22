@@ -49,6 +49,7 @@ CREATE TABLE voters (
   token_issued_at  DATETIME,
   has_voted        BOOLEAN      DEFAULT FALSE,   -- (사용 안 함: 서버는 누가 투표했는지 모름)
   commitment_registered_at DATETIME,           -- 유권자 트리 등록 시각 (commitment 값은 체인에만)
+  commitment_leaf_index INT,                    -- 트리 위치 (시작 전 재등록용, 선거 시작 시 NULL)
   created_at       DATETIME     DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (election_id) REFERENCES elections(id) ON DELETE CASCADE,
   UNIQUE KEY uq_voter (election_id, email)

@@ -2,7 +2,11 @@ import { useState, useEffect } from "react";
 import { Icon } from "../components/Icons";
 import { encryptVote } from '../services/ecdhService';
 import { generateVoteProof, preloadVoteProof } from '../services/zkpService';
-import { loadSecret, createSecret, computeCommitment, buildMerkleProof } from '../services/voterIdService';
+import {
+  computeCommitment, buildMerkleProof, deriveSecret, resolveSecret, loadSeed, saveSeed,
+  bytesToField, newRecoveryBytes, encodeRecoveryCode, decodeRecoveryCode,
+} from '../services/voterIdService';
+import { isPasskeyLikelySupported, createPasskeySeed, restorePasskeySeed, PasskeyPrfUnsupportedError } from '../services/passkeyService';
 import { ethers } from 'ethers';
 import VotingSystemABI from '../abi/VotingSystem.json';
 //import { CANDIDATES } from "../data/mockData"; //후보자 목록 mock 데이터
@@ -10,6 +14,21 @@ import "../styles/VoteDetailPage.css";
 
 const LOGO = "/src/jejun.png";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+const ELIGIBILITY_REASON = {
+  not_in_voter_list: "이 선거의 유권자 명단에 없습니다.",
+  not_verified: "재학증명서 인증이 필요합니다.",
+  wallet_not_registered: "지갑 등록이 필요합니다. 다시 로그인해주세요.",
+  contract_not_deployed: "아직 선거 준비 중입니다 (컨트랙트 미배포).",
+  election_not_active: "지금은 이 선거에 참여할 수 없습니다.",
+};
+
+// 체인의 유권자 트리 (등록 순서대로의 commitment 배열)
+async function readChainCommitments(electionAddress) {
+  const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPC_URL);
+  const votingSystem = new ethers.Contract(electionAddress, VotingSystemABI, provider);
+  return (await votingSystem.getCommitments()).map((c) => BigInt(c));
+}
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -25,19 +44,29 @@ function formatDateTime(value) {
   }).format(date);
 }
 
-export default function VoteDetailPage({ vote, onBack, wallet, token }) {
+export default function VoteDetailPage({ vote, onBack, token }) {
   const [selected, setSelected] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [showDonePopup, setShowDonePopup] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [eligible, setEligible] = useState(null); // null=확인중
-  const [idStatus, setIdStatus] = useState("checking"); // checking | ready | registering | no_key | error
+  // checking | setup | registering | ready | no_key | error
+  const [idStatus, setIdStatus] = useState("checking");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stage, setStage] = useState("");
+  const [electionInfo, setElectionInfo] = useState({ address: vote.contract_address, status: vote.status, canReplace: false });
+  const [passkeyOk, setPasskeyOk] = useState(false);
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyError, setKeyError] = useState("");
+  const [replaceMode, setReplaceMode] = useState(false);       // 투표 키 교체(시작 전 재등록)
+  const [recovery, setRecovery] = useState(null);              // { bytes, code } 새 복구 코드 표시용
+  const [recoverySaved, setRecoverySaved] = useState(false);
+  const [restoreInput, setRestoreInput] = useState("");
 
   // 증명용 회로 파일을 미리 받아둔다 (워커에서 백그라운드로)
   useEffect(() => {
     preloadVoteProof();
+    isPasskeyLikelySupported().then(setPasskeyOk).catch(() => setPasskeyOk(false));
   }, []);
 
   useEffect(() => {
@@ -48,8 +77,9 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
   }, [vote.id]);
 
   // 자격 확인 + 익명 투표 키 준비
-  //  - 이 선거에 처음 들어오면: 브라우저가 랜덤 secret 생성·저장 -> Poseidon(secret) 만 서버에 보내 등록
-  //  - 이미 등록됐는데 이 브라우저에 키가 없으면: 투표 불가 (재등록하면 2표가 가능해지므로 막혀 있음)
+  //  - 미등록 + 캐시된 시드 있음: 같은 시드로 이 선거의 secret 을 만들어 바로 등록 (다른 선거와 같은 패스키/복구 코드 사용)
+  //  - 미등록 + 시드 없음: 패스키(권장) 또는 복구 코드로 투표 키를 만들게 한다 (버튼 클릭 필요: 패스키는 사용자 동작이 있어야 뜬다)
+  //  - 등록됨 + 이 브라우저에 키 없음: 패스키/복구 코드로 복원. 시작 전이면 새 키로 교체도 가능
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -61,27 +91,29 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
         const data = await res.json();
         if (cancelled) return;
         if (!data.eligible) {
-          alert("투표 자격이 없습니다.");
+          alert(ELIGIBILITY_REASON[data.reason] || "투표 자격이 없습니다.");
           onBack();
           return;
         }
         setEligible(true);
-        const electionAddress = data.contract_address || vote.contract_address;
-        const existing = loadSecret(electionAddress);
+        const address = data.contract_address || vote.contract_address;
+        setElectionInfo({ address, status: data.status || vote.status, canReplace: !!data.can_replace });
+
+        const secret = await resolveSecret(address);
         if (data.registered) {
-          setIdStatus(existing ? "ready" : "no_key");
+          if (!secret) { setIdStatus("no_key"); return; }
+          // 이 브라우저의 키가 실제로 등록된 것인지 체인에서 확인 (다른 패스키로 만든 경우 등)
+          const mine = await computeCommitment(secret);
+          const onChain = await readChainCommitments(address);
+          if (!cancelled) setIdStatus(onChain.includes(mine) ? "ready" : "no_key");
           return;
         }
-        setIdStatus("registering");
-        const secret = existing ?? createSecret(electionAddress);
-        const commitment = await computeCommitment(secret);
-        const reg = await fetch(`${BASE_URL}/elections/${vote.id}/register-commitment`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ commitment: commitment.toString() }),
-        });
-        if (!reg.ok) throw new Error((await reg.json().catch(() => null))?.message || "등록 실패");
-        if (!cancelled) setIdStatus("ready");
+        if (secret) {
+          await registerSecret(address, secret, false);
+          if (!cancelled) setIdStatus("ready");
+          return;
+        }
+        setIdStatus("setup");
       } catch (err) {
         if (!cancelled) {
           setIdStatus("error");
@@ -90,7 +122,114 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vote.id, token]);
+
+  // commitment 를 서버에 보내 유권자 트리에 등록 (replace=true 면 기존 키 교체)
+  async function registerSecret(address, secret, replace) {
+    const commitment = await computeCommitment(secret);
+    const reg = await fetch(`${BASE_URL}/elections/${vote.id}/register-commitment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ commitment: commitment.toString(), replace }),
+    });
+    if (!reg.ok) throw new Error((await reg.json().catch(() => null))?.message || "등록 실패");
+  }
+
+  async function finishSetup(seed, source, replace = replaceMode) {
+    const address = electionInfo.address;
+    setIdStatus("registering");
+    saveSeed(seed, source);
+    const secret = await deriveSecret(seed, address);
+    await registerSecret(address, secret, replace);
+    setReplaceMode(false);
+    setRecovery(null);
+    setRecoverySaved(false);
+    setIdStatus("ready");
+  }
+
+  const runKeyAction = async (fn) => {
+    if (keyBusy) return;
+    setKeyBusy(true);
+    setKeyError("");
+    try {
+      await fn();
+    } catch (err) {
+      if (err?.name === "NotAllowedError") setKeyError("패스키 인증이 취소되었습니다.");
+      else if (err instanceof PasskeyPrfUnsupportedError) {
+        setPasskeyOk(false);
+        setKeyError("이 기기에서는 패스키 방식을 쓸 수 없습니다. 복구 코드 방식을 사용해주세요.");
+      } else setKeyError(err.message || String(err));
+      setIdStatus((s) => (s === "registering" ? (replaceMode ? "no_key" : "setup") : s));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  // 새 투표 키: 패스키
+  const setupWithPasskey = () => runKeyAction(async () => {
+    const out = await createPasskeySeed("제주대 전자투표 유권자");
+    const seed = bytesToField(out);
+    if (!seed) throw new Error("패스키 비밀값 오류");
+    await finishSetup(seed, "passkey");
+  });
+
+  // 새 투표 키: 복구 코드 (먼저 보여주고, 저장했다고 확인한 뒤 등록)
+  const startRecoverySetup = () => runKeyAction(async () => {
+    const bytes = newRecoveryBytes();
+    setRecovery({ bytes, code: await encodeRecoveryCode(bytes) });
+    setRecoverySaved(false);
+  });
+  const confirmRecoverySetup = () => runKeyAction(async () => {
+    await finishSetup(bytesToField(recovery.bytes), "code");
+  });
+  const downloadRecovery = () => {
+    const blob = new Blob(
+      [`제주대학교 전자투표 복구 코드\n\n${recovery.code}\n\n이 코드가 있으면 다른 기기에서도 투표 키를 되찾을 수 있습니다.\n다른 사람에게 보여주지 마세요.\n`],
+      { type: "text/plain;charset=utf-8" }
+    );
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "jnu-vote-recovery-code.txt";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  // 복원: 시드로 만든 commitment 가 체인 트리에 있는지 확인한 뒤에만 캐시에 저장
+  async function restoreFromSeed(seed, source) {
+    const secret = await deriveSecret(seed, electionInfo.address);
+    const mine = await computeCommitment(secret);
+    const onChain = await readChainCommitments(electionInfo.address);
+    if (!onChain.includes(mine)) {
+      throw new Error(source === "passkey"
+        ? "이 패스키로 등록한 투표 키가 아닙니다. 처음 등록할 때 쓴 패스키를 골라주세요."
+        : "이 복구 코드로 등록한 투표 키가 아닙니다.");
+    }
+    saveSeed(seed, source);
+    setIdStatus("ready");
+  }
+  const restoreWithPasskey = () => runKeyAction(async () => {
+    const seed = bytesToField(await restorePasskeySeed());
+    if (!seed) throw new Error("패스키 비밀값 오류");
+    await restoreFromSeed(seed, "passkey");
+  });
+  const restoreWithCode = () => runKeyAction(async () => {
+    const seed = bytesToField(await decodeRecoveryCode(restoreInput));
+    if (!seed) throw new Error("복구 코드가 올바르지 않습니다.");
+    await restoreFromSeed(seed, "code");
+  });
+
+  // 시작 전에만: 기존 키를 버리고 새 키로 교체
+  const beginReplace = () => {
+    setReplaceMode(true);
+    setKeyError("");
+    const cached = loadSeed();
+    if (cached) {
+      runKeyAction(() => finishSetup(cached.seed, cached.source, true));
+      return;
+    }
+    setIdStatus("setup");
+  };
 
   const selectedCandidate = candidates.find(c => c.candidate_index === selected);
 
@@ -103,7 +242,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_RPC_URL);
       const electionAddress = vote.contract_address;
 
-      const secret = loadSecret(electionAddress);
+      const secret = await resolveSecret(electionAddress);
       if (!secret) throw new Error("이 브라우저에 이 선거의 투표 키가 없습니다.");
 
       // 1) 선거 정보·유권자 트리는 체인(VotingSystem)에서 직접 읽는다 (서버 신뢰 불필요)
@@ -192,15 +331,88 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
           투표는 한 번만 가능하며, 제출 후에는 수정할 수 없습니다. 신중하게 선택해주세요.
         </div>
 
-        {idStatus === "registering" && (
-          <div className="warning-banner">익명 투표 키를 준비하고 있습니다...</div>
-        )}
-        {idStatus === "no_key" && (
+        {electionInfo.status === "pending" && (
           <div className="warning-banner">
-            <Icon.Warn />
-            이 선거의 투표 키가 이 브라우저에 없습니다. 처음 등록한 브라우저(기기)에서 투표해주세요.
+            아직 투표 시작 전입니다. 지금 투표 키를 등록해 두면 시작 후 바로 투표할 수 있습니다.
           </div>
         )}
+        {idStatus === "registering" && (
+          <div className="warning-banner">익명 투표 키를 등록하고 있습니다...</div>
+        )}
+        {idStatus === "ready" && electionInfo.status === "pending" && (
+          <div className="warning-banner">투표 키 등록이 끝났습니다. 투표가 시작되면 다시 들어와 주세요.</div>
+        )}
+
+        {idStatus === "setup" && !recovery && (
+          <div className="key-panel">
+            <div className="section-title">{replaceMode ? "새 투표 키 만들기" : "투표 키 만들기"}</div>
+            <p className="key-panel-desc">
+              익명 투표를 위해 나만 아는 투표 키를 만듭니다. 서버는 이 키를 모르며, 잃어버리면 이 선거에 투표할 수 없습니다.
+            </p>
+            {passkeyOk && (
+              <button className="btn btn-vote key-btn" disabled={keyBusy} onClick={setupWithPasskey}>
+                패스키로 만들기 (권장: 지문·얼굴 인증, 기기 간 자동 동기화)
+              </button>
+            )}
+            <button className="btn btn-cancel key-btn" disabled={keyBusy} onClick={startRecoverySetup}>
+              복구 코드로 만들기
+            </button>
+          </div>
+        )}
+
+        {idStatus === "setup" && recovery && (
+          <div className="key-panel">
+            <div className="section-title">복구 코드를 저장하세요</div>
+            <p className="key-panel-desc">
+              다른 기기에서 투표하거나 브라우저 기록을 지운 뒤에는 이 코드가 있어야 투표 키를 되찾을 수 있습니다.
+              다른 사람에게 보여주지 마세요.
+            </p>
+            <div className="recovery-code">{recovery.code}</div>
+            <div className="key-actions">
+              <button className="btn btn-cancel key-btn" onClick={() => navigator.clipboard?.writeText(recovery.code)}>복사</button>
+              <button className="btn btn-cancel key-btn" onClick={downloadRecovery}>파일로 저장</button>
+            </div>
+            <label className="key-check">
+              <input type="checkbox" checked={recoverySaved} onChange={(e) => setRecoverySaved(e.target.checked)} />
+              복구 코드를 안전한 곳에 저장했습니다
+            </label>
+            <button className="btn btn-vote key-btn" disabled={!recoverySaved || keyBusy} onClick={confirmRecoverySetup}>
+              등록하기
+            </button>
+          </div>
+        )}
+
+        {idStatus === "no_key" && (
+          <div className="key-panel">
+            <div className="warning-banner">
+              <Icon.Warn />
+              이 브라우저에 이 선거의 투표 키가 없습니다. 등록할 때 쓴 패스키나 복구 코드로 되찾아주세요.
+            </div>
+            {passkeyOk && (
+              <button className="btn btn-vote key-btn" disabled={keyBusy} onClick={restoreWithPasskey}>패스키로 되찾기</button>
+            )}
+            <div className="key-actions">
+              <input
+                className="recovery-input"
+                placeholder="복구 코드 (XXXX-XXXX-...)"
+                value={restoreInput}
+                onChange={(e) => setRestoreInput(e.target.value)}
+              />
+              <button className="btn btn-cancel key-btn" disabled={keyBusy || !restoreInput.trim()} onClick={restoreWithCode}>
+                복구 코드로 되찾기
+              </button>
+            </div>
+            {electionInfo.canReplace && (
+              <>
+                <p className="key-panel-desc">
+                  패스키와 복구 코드를 모두 잃었다면, 투표 시작 전까지는 새 투표 키로 다시 등록할 수 있습니다 (기존 키는 무효가 됩니다).
+                </p>
+                <button className="btn btn-cancel key-btn" disabled={keyBusy} onClick={beginReplace}>새 투표 키로 다시 등록</button>
+              </>
+            )}
+          </div>
+        )}
+        {keyError && <div className="warning-banner"><Icon.Warn />{keyError}</div>}
 
         <div className="section-title">후보자 선택</div>
         {candidates.map(c => (
@@ -223,7 +435,7 @@ export default function VoteDetailPage({ vote, onBack, wallet, token }) {
       {/* 하단 버튼 */}
       <div className="bottom-actions-inner">
         <button className="btn btn-cancel" onClick={() => setSelected(null)}>취소</button>
-        <button className="btn btn-vote" disabled={selected === null || eligible !== true || idStatus !== "ready"} onClick={() => setShowModal(true)}>투표하기</button>
+        <button className="btn btn-vote" disabled={selected === null || eligible !== true || idStatus !== "ready" || electionInfo.status !== "active"} onClick={() => setShowModal(true)}>투표하기</button>
       </div>
 
       {/* 투표 확인 모달 */}

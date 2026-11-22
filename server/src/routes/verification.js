@@ -4,6 +4,15 @@ const fs = require("fs");
 const multer = require("multer");
 const db = require("../db");
 const auth = require("../middleware/auth");
+const { extractCertificateFields } = require("../services/ocrService");
+const { createRateLimiter } = require("../middleware/rateLimit");
+
+// OCR 은 외부 유료 API 를 부르므로 사용자별 횟수 제한
+const ocrLimiter = createRateLimiter({
+  windowMs: 10 * 60_000,
+  max: Number(process.env.OCR_RATE_MAX || 20),
+  keyFn: (req) => req.user?.email,
+});
 
 const router = express.Router();
 const uploadDir = path.join(process.cwd(), "uploads", "verifications");
@@ -21,6 +30,12 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+// OCR 용: 디스크에 저장하지 않고 메모리에서만 처리
+const ocrUpload = multer({
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
@@ -56,6 +71,22 @@ function removeUploadedFile(filePath) {
     console.error("인증 파일 삭제 실패:", err);
   }
 }
+
+// POST /verification/ocr
+// 재학증명서 이미지 → { doc_no, student_id, name } (입력 칸 자동 채움용, 실패해도 수동 입력 가능)
+// OCR 키(GEMINI_API_KEY)는 서버에만 있다.
+router.post("/ocr", auth, ocrLimiter, ocrUpload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "file 이 필요합니다." });
+  }
+  try {
+    const fields = await extractCertificateFields(req.file.buffer, req.file.mimetype);
+    res.json(fields);
+  } catch (err) {
+    console.error("[verification/ocr] 오류:", err.message);
+    res.status(err.status || 500).json({ message: err.message || "OCR 실패" });
+  }
+});
 
 // POST /verification/request
 // multipart/form-data: student_id, file

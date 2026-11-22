@@ -28,7 +28,7 @@
 
 **성공 (200)**: `{ "message": "투표 완료", "txHash": "0x..." }`
 
-**에러**: 400 형식 오류 / 400 `{ message: "투표가 거절되었습니다.", reason }` (예: `duplicate nullifier`, `unknown merkle root`, `vote proof failed`) / 404 선거 없음
+**에러**: 400 형식 오류 / 400 `{ message: "투표가 거절되었습니다.", reason }` (예: `duplicate nullifier`, `unknown merkle root`, `vote proof failed`) / 404 선거 없음 / 429 횟수 초과 (IP 당 기본 10회/분, `RELAY_RATE_MAX`·`RELAY_RATE_WINDOW_MS`. IP 는 메모리에만 두고 기록하지 않음)
 
 ## `POST /vote/confirm` — 삭제 (410)
 학번(JWT)과 투표 트랜잭션·임시 공개키를 한 행에 저장해서, 서버가 "누가 누구에게"를 복원할 수 있었다.

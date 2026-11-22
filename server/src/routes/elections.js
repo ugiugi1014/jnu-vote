@@ -11,10 +11,6 @@ const ELECTION_FACTORY_ABI = [
   "event ElectionCreated(uint256 indexed electionId, address votingSystem, address votingToken)",
 ];
 
-const VOTING_TOKEN_ABI = [
-  "function issueTokenBatch(address[] calldata recipients) external",
-];
-
 // status 상수화
 const ELECTION_STATUS = {
   PENDING: "pending",
@@ -102,7 +98,7 @@ router.post("/", auth, adminOnly, async (req, res) => {
     const [result] = await db.query(
       `INSERT INTO elections (title, description, start_time, end_time, coord_public_key, coord_private_key)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [title, description || null, start_time, end_time, coordPublicKey, coordPrivateKey]
+      [title, description || null, start_time, end_time, coordPublicKey, require("../services/coordKeyStore").sealCoordKey(coordPrivateKey)]
     );
 
     scheduleElectionClose({ id: result.insertId, end_time });
@@ -341,6 +337,8 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
        WHERE id=? AND status=?`,
       [ELECTION_STATUS.ACTIVE, electionId, ELECTION_STATUS.PENDING]
     );
+    // 재등록(교체)은 시작 전까지만 → 학생별 트리 위치는 더 이상 필요 없으므로 지운다
+    await db.query(`UPDATE voters SET commitment_leaf_index = NULL WHERE election_id = ?`, [electionId]);
 
     const [rows] = await db.query(
       `SELECT id, end_time FROM elections WHERE id=?`,
@@ -1100,7 +1098,7 @@ async function checkVoterEligibility(conn, electionId, email, allowedStatuses) {
   if (listRows.length === 0) return { ok: false, status: 200, reason: "not_in_voter_list" };
 
   const [voterRows] = await conn.query(
-    `SELECT v.id, v.commitment_registered_at,
+    `SELECT v.id, v.commitment_registered_at, v.commitment_leaf_index,
             us.wallet_address,
             COALESCE(uv.status, 'none') AS verification_status
      FROM user_verifications uv
@@ -1125,7 +1123,7 @@ async function checkVoterEligibility(conn, electionId, email, allowedStatuses) {
       [electionId, email, listRows[0].student_id, voter.wallet_address]
     );
     const [createdRows] = await conn.query(
-      `SELECT id, commitment_registered_at FROM voters WHERE election_id = ? AND email = ?`,
+      `SELECT id, commitment_registered_at, commitment_leaf_index FROM voters WHERE election_id = ? AND email = ?`,
       [electionId, email]
     );
     voter = { ...voter, ...createdRows[0] };
@@ -1137,18 +1135,23 @@ async function checkVoterEligibility(conn, electionId, email, allowedStatuses) {
 =====================================================
   GET /elections/:id/my-eligibility
   - 자격 확인 + 유권자 트리 등록 여부
-  - 응답: { eligible: true, registered: bool, contract_address } | { eligible: false, reason }
+  - 응답: { eligible: true, registered, can_replace, status, contract_address } | { eligible: false, reason }
+  - pending(시작 전)에도 응답한다: 미리 투표 키를 등록할 수 있게 (일찍 등록할수록 익명성 집합이 커진다)
   ※ 익명 투표 전환: 서버는 누가 투표했는지 모른다 (has_voted 없음). 토큰·가스 발급 없음 (relayer 가 제출).
 =====================================================
 */
 router.get("/:id/my-eligibility", auth, async (req, res) => {
   const conn = await db.getConnection();
   try {
-    const r = await checkVoterEligibility(conn, req.params.id, req.user.email, [ELECTION_STATUS.ACTIVE]);
+    const r = await checkVoterEligibility(conn, req.params.id, req.user.email, [ELECTION_STATUS.PENDING, ELECTION_STATUS.ACTIVE]);
     if (!r.ok) return res.status(r.status).json({ eligible: false, reason: r.reason });
+    const registered = !!r.voter.commitment_registered_at;
     return res.json({
       eligible: true,
-      registered: !!r.voter.commitment_registered_at,
+      registered,
+      // 투표 키를 잃었을 때 새 키로 교체 가능 여부 (시작 전 + 트리 위치가 남아 있을 때)
+      can_replace: registered && r.election.status === ELECTION_STATUS.PENDING && r.voter.commitment_leaf_index != null,
+      status: r.election.status,
       contract_address: r.election.contract_address,
     });
   } catch (err) {
@@ -1162,10 +1165,12 @@ router.get("/:id/my-eligibility", auth, async (req, res) => {
 /*
 =====================================================
   POST /elections/:id/register-commitment
-  { "commitment": "1234..." }   // Poseidon(secret), secret 은 학생 브라우저에만 있음
+  { "commitment": "1234...", "replace": false }   // Poseidon(secret), secret 은 학생 쪽에만 있음
   - 자격(명단·재학인증·지갑) 확인 후 VotingSystem.registerVoter(commitment) 호출
-  - 학생 1명당 선거마다 1번만 (재등록을 허용하면 commitment 2개로 2번 투표 가능)
+  - 학생 1명당 선거마다 1개 (commitment 2개면 2번 투표 가능)
   - pending(시작 전) / active 상태에서 가능. 일찍 등록할수록 익명성 집합이 커진다.
+  - replace: true  → 투표 키를 잃은 경우 기존 commitment 를 새 것으로 교체 (VotingSystem.replaceVoter)
+                     시작 전(pending)에만 허용. 컨트랙트도 표가 하나라도 있으면 거절한다.
 =====================================================
 */
 router.post("/:id/register-commitment", auth, async (req, res) => {
@@ -1173,6 +1178,7 @@ router.post("/:id/register-commitment", auth, async (req, res) => {
   const conn = await db.getConnection();
   try {
     const { commitment } = req.body || {};
+    const replace = req.body?.replace === true;
     if (typeof commitment !== "string" || !/^[0-9]{1,78}$/.test(commitment)) {
       return res.status(400).json({ message: "commitment 형식 오류 (10진수 문자열)" });
     }
@@ -1188,20 +1194,60 @@ router.post("/:id/register-commitment", auth, async (req, res) => {
 
     // 동시 요청으로 두 번 등록되지 않도록 행 잠금
     const [lockRows] = await conn.query(
-      `SELECT commitment_registered_at FROM voters WHERE id = ? FOR UPDATE`,
+      `SELECT commitment_registered_at, commitment_leaf_index FROM voters WHERE id = ? FOR UPDATE`,
       [r.voter.id]
     );
-    if (lockRows[0]?.commitment_registered_at) {
+    const already = !!lockRows[0]?.commitment_registered_at;
+    const { getVotingContract } = require("../blockchain/votingContract");
+    const contract = getVotingContract(r.election.contract_address);
+
+    if (replace) {
+      // 투표 키 교체: 시작 전에만, 이미 등록된 학생만
+      if (!already) {
+        await conn.rollback();
+        return res.status(409).json({ message: "등록된 투표 키가 없습니다.", reason: "not_registered" });
+      }
+      const leafIndex = lockRows[0].commitment_leaf_index;
+      if (r.election.status !== ELECTION_STATUS.PENDING || leafIndex == null) {
+        await conn.rollback();
+        return res.status(409).json({ message: "선거 시작 후에는 투표 키를 교체할 수 없습니다.", reason: "replace_closed" });
+      }
+      const { buildMerklePath } = require("../services/voterTree");
+      const all = (await contract.getCommitments()).map((x) => BigInt(x));
+      const oldCommitment = all[leafIndex];
+      if (oldCommitment === undefined) throw new Error("체인의 트리 위치를 찾을 수 없습니다.");
+      const { siblings } = await buildMerklePath(all, Number(leafIndex));
+      const tx = await contract.replaceVoter(leafIndex, oldCommitment, c, siblings);
+      await tx.wait();
+      await conn.query(`UPDATE voters SET commitment_registered_at = NOW() WHERE id = ?`, [r.voter.id]);
+      await conn.commit();
+      return res.json({ message: "투표 키 교체 완료", txHash: tx.hash });
+    }
+
+    if (already) {
       await conn.rollback();
       return res.status(409).json({ message: "이미 이 선거에 등록되었습니다.", reason: "already_registered" });
     }
 
-    const { getVotingContract } = require("../blockchain/votingContract");
-    const contract = getVotingContract(r.election.contract_address);
     const tx = await contract.registerVoter(c);
-    await tx.wait();
+    const receipt = await tx.wait();
 
-    await conn.query(`UPDATE voters SET commitment_registered_at = NOW() WHERE id = ?`, [r.voter.id]);
+    // 시작 전에는 재등록(교체)을 위해 트리 위치를 기억한다. 시작하면 지운다.
+    let leafIndex = null;
+    if (r.election.status === ELECTION_STATUS.PENDING) {
+      for (const log of receipt?.logs || []) {
+        try {
+          const parsed = contract.interface.parseLog(log);
+          if (parsed?.name === "VoterRegistered" && BigInt(parsed.args.commitment) === c) {
+            leafIndex = Number(parsed.args.leafIndex);
+          }
+        } catch (_) { /* 다른 이벤트 */ }
+      }
+    }
+    await conn.query(
+      `UPDATE voters SET commitment_registered_at = NOW(), commitment_leaf_index = ? WHERE id = ?`,
+      [leafIndex, r.voter.id]
+    );
     await conn.commit();
     // ※ commitment 값은 DB 에 저장하지 않는다 (체인에만 존재)
     return res.json({ message: "등록 완료", txHash: tx.hash });
@@ -1333,71 +1379,13 @@ router.post("/:id/voters/bulk", auth, adminOnly, async (req, res) => {
       [electionId, electionId]
     );
 
-    // 3. 이미 가입+인증+지갑 있는 학번 선별 → 즉시 토큰 발급
-    const [eligible] = await conn.query(
-      `SELECT uv.email, esl.student_id, us.wallet_address, v.id AS voter_id
-       FROM election_student_list esl
-       JOIN user_verifications uv ON uv.student_id = esl.student_id
-       JOIN user_secrets us ON us.email = uv.email
-       LEFT JOIN voters v ON v.email = uv.email AND v.election_id = esl.election_id
-       WHERE esl.election_id = ?
-         AND esl.student_id IN (?)
-         AND uv.status = 'approved'
-         AND us.wallet_address IS NOT NULL
-         AND (v.token_issued_at IS NULL OR v.id IS NULL)`,
-      [electionId, student_ids]
-    );
-
-    let txHash = null;
-    let issuedCount = 0;
-
-    if (eligible.length > 0 && election.token_contract_address) {
-      const { ethers } = require("ethers");
-
-      const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-      const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
-      const tokenContract = new ethers.Contract(
-        election.token_contract_address,
-        VOTING_TOKEN_ABI,
-        adminWallet
-      );
-
-      const walletAddresses = eligible.map(e => e.wallet_address);
-      const tx = await tokenContract.issueTokenBatch(walletAddresses);
-      await tx.wait();
-      txHash = tx.hash;
-      issuedCount = eligible.length;
-
-      // 토큰 발급과 함께 가스(ETH)도 발급 — castVote는 투표자 지갑이 직접 가스 지불
-      const { fundVoterGas } = require("../blockchain/votingContract");
-      await fundVoterGas(walletAddresses);
-
-      for (const voter of eligible) {
-        await conn.query(
-          `INSERT INTO voters (
-             election_id, email, student_id, wallet_address,
-             verification_status, verified_at, token_issued_at
-           )
-           VALUES (?, ?, ?, ?, 'approved', NOW(), NOW())
-           ON DUPLICATE KEY UPDATE
-             student_id = VALUES(student_id),
-             wallet_address = COALESCE(VALUES(wallet_address), wallet_address),
-             verification_status = 'approved',
-             verified_at = COALESCE(verified_at, NOW()),
-             token_issued_at = COALESCE(token_issued_at, NOW())`,
-          [electionId, voter.email, voter.student_id, voter.wallet_address]
-        );
-      }
-    }
+    // (익명 투표 전환 후) 토큰·가스 발급 없음. 학생은 투표 화면에서 투표 키를 직접 등록한다.
 
     await conn.commit();
 
     res.json({
       message: "명단 등록 완료",
       total: student_ids.length,
-      issued: issuedCount,
-      pending: student_ids.length - issuedCount,
-      txHash,
     });
   } catch (err) {
     await conn.rollback();

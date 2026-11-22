@@ -11,6 +11,14 @@ none → pending → approved / rejected
 
 ---
 
+## `POST /verification/ocr`
+
+재학증명서 이미지(png/jpg/webp, 5MB 이하)에서 입력 칸 자동 채움용 값을 뽑는다. OCR 키는 서버에만 있다.
+**권한**: 로그인. **본문**: multipart `file`. 사용자당 10분 20회 제한(`OCR_RATE_MAX`).
+**응답**: 200 `{ doc_no, student_id, name }` (못 읽은 값은 빈 문자열) / 400 이미지 아님 / 429 횟수 초과 / 502 OCR 서비스 오류.
+
+---
+
 ## `POST /verification/request`
 
 재학증명서 파일 + 학번 + 진위확인 문서번호 제출.

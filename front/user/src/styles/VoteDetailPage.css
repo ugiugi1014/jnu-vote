@@ -19,6 +19,31 @@
   box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 
+/* 투표 키 만들기 / 되찾기 */
+.key-panel {
+  background: #fff; border: 1px solid #e8e8e8; border-radius: 14px;
+  padding: 22px 24px; margin-bottom: 28px;
+  display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.key-panel .section-title { margin: 0; }
+.key-panel .warning-banner { margin-bottom: 0; }
+.key-panel-desc { font-size: 13px; color: #555; line-height: 1.6; margin: 0; text-align: left; }
+.key-btn { flex: none; width: 100%; font-size: 14px; padding: 12px; }
+.key-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.key-actions { display: flex; gap: 8px; }
+.key-actions .key-btn { flex: 1; width: auto; }
+.key-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #333; }
+.recovery-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 18px; letter-spacing: 1px; text-align: center; word-break: break-all;
+  background: #f6f7f9; border: 1px dashed #ccc; border-radius: 10px; padding: 14px;
+}
+.recovery-input {
+  flex: 2; min-width: 0; padding: 12px; border: 1.5px solid #ddd; border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px;
+}
+
 .candidate-card {
   background: #fff; border: 1.5px solid #e8e8e8; border-radius: 14px;
   padding: 22px 24px; margin-bottom: 12px; cursor: pointer;

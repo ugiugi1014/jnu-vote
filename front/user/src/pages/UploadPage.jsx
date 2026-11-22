@@ -25,7 +25,7 @@ function Header({ studentId, onLogout }) {
 }
 
 /* ── 재학증명서 업로드 화면 ── */
-function UploadForm({ studentId, onLogout, onSubmit }) {
+function UploadForm({ studentId, onLogout, onSubmit, onOcr }) {
   const [verificationStudentId, setVerificationStudentId] = useState("");
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -50,61 +50,19 @@ function UploadForm({ studentId, onLogout, onSubmit }) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       setPreview(e.target.result);
-      const base64 = e.target.result.split(",")[1];
 
       try {
-        const provider = import.meta.env.VITE_OCR_PROVIDER || "ollama";
-        let text = "";
+        // OCR 은 서버가 처리한다 (OCR 키를 브라우저에 두지 않기 위해)
+        if (!onOcr) return;
+        const parsed = await onOcr(f);
 
-        if (provider === "gemini") {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${import.meta.env.VITE_GEMINI_MODEL || "gemini-2.0-flash"}:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    { text: `이 재학증명서 이미지에서 다음 정보만 JSON으로 추출해줘. 다른 말 없이 JSON만 반환해.\n{\n  "doc_no": "좌측 상단 진위확인 문서번호 16자리 영숫자 (하이픈 제거)",\n  "student_id": "학번",\n  "name": "이름"\n}` },
-                    { inline_data: { mime_type: f.type, data: base64 } }
-                  ]
-                }]
-              }),
-            }
-          );
-          if (!res.ok) { console.error("Gemini 오류:", res.status, await res.text()); return; }
-          const data = await res.json();
-          text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-        } else {
-          const res = await fetch(
-            `${import.meta.env.VITE_OLLAMA_HOST}/api/generate?ngrok-skip-browser-warning=true`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: import.meta.env.VITE_OLLAMA_MODEL,
-                prompt: `이 재학증명서 이미지에서 다음 정보만 JSON으로 추출해줘. 다른 말 없이 JSON만 반환해.\n{\n  "doc_no": "좌측 상단 진위확인 문서확인번호 16자리 영숫자 (하이픈 제거)",\n  "student_id": "학번",\n  "name": "이름"\n}`,
-                images: [base64],
-                stream: false,
-              }),
-            }
-          );
-          if (!res.ok) { console.error("Ollama 오류:", res.status, await res.text()); return; }
-          const data = await res.json();
-          text = data.response || "";
-        }
-
-        const clean = text.replace(/```json|```/g, "").trim();
-        const parsed = JSON.parse(clean);
-
-        if (parsed.doc_no?.length === 16) {
+        if (parsed?.doc_no?.length === 16) {
           setDocNo1(parsed.doc_no.slice(0, 4).toUpperCase());
           setDocNo2(parsed.doc_no.slice(4, 8).toUpperCase());
           setDocNo3(parsed.doc_no.slice(8, 12).toUpperCase());
           setDocNo4(parsed.doc_no.slice(12, 16).toUpperCase());
         }
-        if (parsed.student_id) setVerificationStudentId(parsed.student_id);
+        if (parsed?.student_id) setVerificationStudentId(parsed.student_id);
 
       } catch (err) {
         console.error("OCR 실패:", err);
@@ -280,9 +238,9 @@ function WaitingScreen({ studentId, onLogout, onRefresh }) {
 }
 
 /* ── 메인 UploadPage ── */
-export default function UploadPage({ studentId, onLogout, onSubmit, onRefresh, isPending }) {
+export default function UploadPage({ studentId, onLogout, onSubmit, onOcr, onRefresh, isPending }) {
   if (isPending) {
     return <WaitingScreen studentId={studentId} onLogout={onLogout} onRefresh={onRefresh} />;
   }
-  return <UploadForm studentId={studentId} onLogout={onLogout} onSubmit={onSubmit} />;
+  return <UploadForm studentId={studentId} onLogout={onLogout} onSubmit={onSubmit} onOcr={onOcr} />;
 }

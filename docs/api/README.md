@@ -85,7 +85,8 @@ Authorization: Bearer <JWT>
   POST /verification/request       재학증명서 파일 + 문서번호 제출
   ⏳ 관리자 승인 대기
   PATCH /verification/admin/:id    관리자 승인 → status: approved
-  POST /elections/:id/tokens/issue 관리자 토큰 일괄 발행
+  (투표 화면) 패스키/복구 코드로 투표 키 생성 → POST /elections/:id/register-commitment
+  ※ POST /elections/:id/tokens/issue 는 410 (익명 투표 전환 후 토큰 미사용)
 
 [관리자 선거 설정]
   POST /elections                   선거 생성

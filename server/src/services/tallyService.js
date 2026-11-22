@@ -22,6 +22,7 @@ const {
   parseVoterPublicKey,
 } = require("./ecdhDecrypt");
 const { buildTallyBatchInputs, proveTallyBatches, TALLY_CANDIDATES } = require("./zkpServices");
+const { openCoordKey } = require("./coordKeyStore");
 
 function tallyError(message, statusCode = 400) {
   const err = new Error(message);
@@ -119,6 +120,7 @@ async function performTally(electionId) {
     //    체인의 모든 표는 voteProof 로 "유효 후보를 등록된 코디네이터 키로 암호화"한 것이 검증됐으므로
     //    복호화 실패는 정상적으로 일어날 수 없다 -> 건너뛰지 않고 즉시 중단 (tally 회로도 누락을 허용하지 않음)
     const coordPub = JSON.parse(election.coord_public_key);
+    const coordPrivPlain = openCoordKey(election.coord_private_key); // DB 에는 암호화돼 있을 수 있다
     const zkpVotes = [];
     for (let i = 0; i < encryptedVotes.length; i++) {
       const vote = encryptedVotes[i];
@@ -128,7 +130,7 @@ async function performTally(electionId) {
       const { ciphertext } = parseEncryptedData(encryptedDataBytes);
       const ephPub = parseVoterPublicKey(voterPubKeyBytes);
 
-      const decrypted = await decryptVote({ ciphertext }, election.coord_private_key, ephPub);
+      const decrypted = await decryptVote({ ciphertext }, coordPrivPlain, ephPub);
 
       if (tally[decrypted.candidateId] === undefined) {
         throw tallyError(`vote ${i} 복호화 결과(${decrypted.candidateId})가 후보 목록에 없음`, 500);
@@ -145,7 +147,7 @@ async function performTally(electionId) {
 
     // 7) 배치 입력 생성 + ZKP② proof 병렬 생성 (아직 체인에 기록되지 않은 배치만)
     const batches = await buildTallyBatchInputs({
-      coordPriv: election.coord_private_key,
+      coordPriv: coordPrivPlain,
       coordPub,
       zkpVotes,
       candidatesCount,

@@ -31,6 +31,11 @@ const { restoreElectionSchedules } = require("./services/electionScheduler");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 리버스 프록시(nginx 등) 뒤에서 돌릴 때 실제 클라이언트 IP 로 횟수 제한을 하려면 설정 (예: TRUST_PROXY=1)
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
+}
+
 // CORS: 화이트리스트는 .env의 CORS_ORIGINS (쉼표 구분), 없으면 Vite 기본(5173)
 const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:5173")
   .split(",")

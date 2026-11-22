@@ -83,6 +83,7 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
     event ElectionClosed();
     event VoteCast(bytes32 indexed nullifier);
     event VoterRegistered(uint256 indexed leafIndex, uint256 commitment, uint256 root);
+    event VoterReplaced(uint256 indexed leafIndex, uint256 oldCommitment, uint256 newCommitment, uint256 root);
     event TallyRecorded(uint256 indexed candidateId, uint256 voteCount);
     event ElectionConfigured(uint256 coordPubX, uint256 coordPubY, uint256 numCandidates);
     event TallyBatchRecorded(uint256 indexed batchIndex, uint256 tallyCommit);
@@ -195,6 +196,52 @@ contract VotingSystem is Initializable, OwnableUpgradeable {
         commitmentUsed[commitment] = true;
         commitments.push(commitment);
         emit VoterRegistered(index, commitment, cur);
+    }
+
+    /// @notice 투표 키를 잃은 학생의 commitment 교체 (표가 하나도 없을 때만)
+    /// @dev 아직 아무도 투표하지 않았으므로 옛 secret 으로 이미 낸 표는 없다.
+    ///      교체 후 root 기록을 새 root 하나로 초기화해서, 옛 secret 이 예전 root 로 증명하는 것도 막는다.
+    ///      siblings 는 오프체인에서 commitments 배열로 계산한 경로 (빈 칸 = zeros(level)).
+    function replaceVoter(
+        uint256 leafIndex,
+        uint256 oldCommitment,
+        uint256 newCommitment,
+        uint256[16] calldata siblings
+    ) external onlyElectionAdmin {
+        require(!tallied, "already tallied");
+        require(votes.length == 0, "votes already cast");
+        require(leafIndex < commitments.length, "invalid leaf index");
+        require(commitments[leafIndex] == oldCommitment, "old commitment mismatch");
+        require(newCommitment != 0 && newCommitment < SNARK_SCALAR_FIELD, "invalid commitment");
+        require(!commitmentUsed[newCommitment], "commitment already registered");
+
+        // filledSubtrees[i] 는 level i 에서 위치 ((N-1)>>i) 를 짝수로 내린 노드의 현재 값이다.
+        // 바꾸는 경로가 그 노드를 지나면 같이 갱신해야 다음 registerVoter 의 root 가 맞는다.
+        uint256 last = commitments.length - 1;
+        uint256 oldCur = oldCommitment;
+        uint256 newCur = newCommitment;
+        uint256 idx = leafIndex;
+        for (uint256 i = 0; i < TREE_DEPTH; i++) {
+            if (idx == ((last >> i) & ~uint256(1))) {
+                filledSubtrees[i] = newCur;
+            }
+            if (idx % 2 == 0) {
+                oldCur = _hash(oldCur, siblings[i]);
+                newCur = _hash(newCur, siblings[i]);
+            } else {
+                oldCur = _hash(siblings[i], oldCur);
+                newCur = _hash(siblings[i], newCur);
+            }
+            idx /= 2;
+        }
+        require(oldCur == getLastRoot(), "invalid merkle proof");
+
+        for (uint256 r = 0; r < ROOT_HISTORY; r++) roots[r] = 0;
+        currentRootIndex = 0;
+        roots[0] = newCur;
+        commitments[leafIndex] = newCommitment;
+        commitmentUsed[newCommitment] = true; // 옛 commitment 도 used 로 남겨 재사용을 막는다
+        emit VoterReplaced(leafIndex, oldCommitment, newCommitment, newCur);
     }
 
     function getLastRoot() public view returns (uint256) {

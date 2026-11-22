@@ -22,23 +22,6 @@ export default function App() {
   const [wallet, setWallet] = useState(null);
   const [userStatus, setUserStatus] = useState("none");
 
-  // 앱 첫 로드 시 (새로고침 복원)
-  useEffect(() => {
-    const stored = sessionStorage.getItem(AUTH_STORAGE_KEY);
-    if (!stored) { setPage("login"); return; }
-
-    const parsed = JSON.parse(stored);
-    setToken(parsed.token);
-    setStudentId(parsed.email);
-    setRole(parsed.role);
-    setUserStatus(parsed.verificationStatus);
-    // wallet은 복원 안 함 → 재로그인 유도
-    setWallet(null);
-
-    // 토큰 유효성 서버 확인
-    refreshProfile(parsed.token);
-  }, []);
-
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
   const clearSession = () => {
@@ -99,6 +82,24 @@ export default function App() {
     return profile;
   };
 
+  // 앱 첫 로드 시 (새로고침 복원)
+  useEffect(() => {
+    const stored = sessionStorage.getItem(AUTH_STORAGE_KEY);
+    if (!stored) { setPage("login"); return; }
+
+    const parsed = JSON.parse(stored);
+    setToken(parsed.token);
+    setStudentId(parsed.email);
+    setRole(parsed.role);
+    setUserStatus(parsed.verificationStatus);
+    // wallet은 복원 안 함 → 재로그인 유도
+    setWallet(null);
+
+    // 토큰 유효성 서버 확인
+    refreshProfile(parsed.token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleLogin = (session) => {
     applySession(session);
   };
@@ -147,6 +148,19 @@ export default function App() {
     setPage("list");
   };
 
+  // 재학증명서 OCR (서버가 OCR 키를 갖고 처리)
+  const handleOcr = async (file) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE_URL}/verification/ocr`, {
+      method: "POST",
+      headers: authHeaders,
+      body: formData,
+    });
+    if (!res.ok) return null;
+    return res.json();
+  };
+
   const handleRefresh = async () => {
     const profile = await refreshProfile();
     if (profile) {
@@ -165,6 +179,7 @@ export default function App() {
           studentId={studentId}
           onLogout={handleLogout}
           onSubmit={handleUploadSubmit}
+          onOcr={handleOcr}
           onRefresh={handleRefresh}
           isPending={userStatus === "pending"}
         />

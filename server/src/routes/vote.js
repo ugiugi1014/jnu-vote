@@ -2,6 +2,14 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const { getVotingContract } = require("../blockchain/votingContract");
+const { createRateLimiter } = require("../middleware/rateLimit");
+
+// relay 는 로그인 없이 열려 있으므로 IP 별 횟수 제한 (IP 는 메모리에만, 기록하지 않음)
+// 요청마다 체인 사전 검증(staticCall)을 하므로 RPC 사용량 소진을 막는 목적.
+const relayLimiter = createRateLimiter({
+  windowMs: Number(process.env.RELAY_RATE_WINDOW_MS || 60_000),
+  max: Number(process.env.RELAY_RATE_MAX || 10),
+});
 
 /*
 =====================================================
@@ -19,14 +27,14 @@ const { getVotingContract } = require("../blockchain/votingContract");
   - 서버 관리자 지갑이 castVote 트랜잭션을 대신 보낸다 (학생 지갑·토큰·가스 불필요).
   - 자격은 증명(유권자 트리 포함)으로, 이중투표는 nullifier 로 컨트랙트가 막는다.
   - 보내기 전에 staticCall 로 미리 실행해 보고, 실패할 증명이면 가스를 쓰지 않고 거절한다.
-  - 요청 본문/IP 를 로그로 남기지 않는다.
+  - 요청 본문/IP 를 로그로 남기지 않는다. (횟수 제한도 IP 를 메모리에만 잠시 둔다)
 =====================================================
 */
 const isHex = (v, bytes) => typeof v === "string" && new RegExp(`^0x[0-9a-fA-F]{${bytes ? bytes * 2 : "2,"}}$`).test(v);
 const isUint = (v) => (typeof v === "string" && /^[0-9]{1,78}$/.test(v)) || (typeof v === "number" && Number.isSafeInteger(v) && v >= 0);
 const isPair = (a) => Array.isArray(a) && a.length === 2 && a.every(isUint);
 
-router.post("/relay", async (req, res) => {
+router.post("/relay", relayLimiter, async (req, res) => {
   try {
     const { election_id, nullifier, merkleRoot, encryptedData, voterPubKey, pA, pB, pC } = req.body || {};
     if (!election_id || !isHex(nullifier, 32) || !isUint(merkleRoot) || !isHex(encryptedData) || !isHex(voterPubKey)

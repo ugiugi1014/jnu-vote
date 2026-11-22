@@ -109,6 +109,96 @@ contract IntegrityTest is Test {
         vm.stopPrank();
     }
 
+    // ───── 투표 키 분실 시 commitment 교체 (표가 없을 때만) ─────
+    // 오프체인(서버)과 같은 규칙으로 leaf 경로를 계산한다 (빈 칸 = zeros(level))
+    function _siblings(uint256[] memory leaves, uint256 index) internal view returns (uint256[16] memory sib) {
+        IPoseidonT3 h = sys.hasher();
+        uint256[] memory level = leaves;
+        uint256 idx = index;
+        for (uint256 i = 0; i < 16; i++) {
+            uint256 z = sys.zeros(i);
+            if (idx % 2 == 0) sib[i] = idx + 1 < level.length ? level[idx + 1] : z;
+            else sib[i] = level[idx - 1];
+            uint256 n = (level.length + 1) / 2;
+            if (n == 0) n = 1;
+            uint256[] memory next = new uint256[](n);
+            for (uint256 j = 0; j < n; j++) {
+                uint256 l = 2 * j < level.length ? level[2 * j] : z;
+                uint256 r = 2 * j + 1 < level.length ? level[2 * j + 1] : z;
+                next[j] = h.poseidon([l, r]);
+            }
+            level = next;
+            idx /= 2;
+        }
+    }
+    function _fresh(uint256[] memory leaves) internal returns (VotingSystem s2) {
+        MockVoteVerifier vv = new MockVoteVerifier();
+        ElectionFactory f = new ElectionFactory(address(new VotingSystem()), address(new VotingToken()), address(vv), address(tv), address(new PoseidonHasher()));
+        (address s, ) = f.createElection(2, admin);
+        s2 = VotingSystem(s);
+        vm.startPrank(admin);
+        for (uint256 i = 0; i < leaves.length; i++) s2.registerVoter(leaves[i]);
+        vm.stopPrank();
+    }
+    function _arr(uint256 a, uint256 b, uint256 c) internal pure returns (uint256[] memory x) { x = new uint256[](3); x[0] = a; x[1] = b; x[2] = c; }
+    function _arr4(uint256 a, uint256 b, uint256 c, uint256 d) internal pure returns (uint256[] memory x) { x = new uint256[](4); x[0] = a; x[1] = b; x[2] = c; x[3] = d; }
+
+    function _replaceCase(uint256 index) internal {
+        uint256[] memory before = _arr(1001, 1002, 1003);
+        vm.startPrank(admin);
+        for (uint256 i = 0; i < 3; i++) sys.registerVoter(before[i]);
+        uint256 oldRoot = sys.getLastRoot();
+        sys.replaceVoter(index, before[index], 9999, _siblings(before, index));
+        vm.stopPrank();
+        uint256[] memory afterLeaves = _arr(1001, 1002, 1003);
+        afterLeaves[index] = 9999;
+        // 처음부터 새 leaf 로 등록한 트리와 root 가 같아야 한다
+        assertEq(sys.getLastRoot(), _fresh(afterLeaves).getLastRoot());
+        assertEq(sys.commitments(index), 9999);
+        assertFalse(sys.isKnownRoot(oldRoot));                     // 옛 root 로는 투표 불가
+        // 교체 후 추가 등록해도 root 가 맞아야 한다 (filledSubtrees 갱신 확인)
+        vm.prank(admin); sys.registerVoter(1004);
+        assertEq(sys.getLastRoot(), _fresh(_arr4(afterLeaves[0], afterLeaves[1], afterLeaves[2], 1004)).getLastRoot());
+    }
+    function test_replaceFirstLeaf() public { _replaceCase(0); }
+    function test_replaceMiddleLeaf() public { _replaceCase(1); }
+    function test_replaceLastLeaf() public { _replaceCase(2); }
+    function test_replaceOldCommitmentNotReusable() public {
+        _replaceCase(1);
+        vm.prank(admin); vm.expectRevert(bytes("commitment already registered")); sys.registerVoter(1002);
+    }
+    function test_replaceRejectedAfterVote() public {
+        uint256[] memory leaves = _arr(1001, 1002, 1003);
+        vm.startPrank(admin);
+        for (uint256 i = 0; i < 3; i++) sys.registerVoter(leaves[i]);
+        sys.configureElection(CX, CY, 3); sys.openElection();
+        vm.stopPrank();
+        sys.castVote(bytes32(uint(1)), sys.getLastRoot(), abi.encode(uint(5)), abi.encode(uint(1), uint(2)), pA, pB, pC);
+        uint256[16] memory sib = _siblings(leaves, 1);             // expectRevert 전에 계산 (외부 호출 포함)
+        vm.prank(admin); vm.expectRevert(bytes("votes already cast"));
+        sys.replaceVoter(1, 1002, 9999, sib);
+    }
+    function test_replaceWrongProofRejected() public {
+        uint256[] memory leaves = _arr(1001, 1002, 1003);
+        vm.startPrank(admin);
+        for (uint256 i = 0; i < 3; i++) sys.registerVoter(leaves[i]);
+        uint256[16] memory good = _siblings(leaves, 1);
+        uint256[16] memory bad = _siblings(leaves, 1);
+        bad[0] = 12345;
+        vm.expectRevert(bytes("invalid merkle proof")); sys.replaceVoter(1, 1002, 9999, bad);
+        vm.expectRevert(bytes("old commitment mismatch")); sys.replaceVoter(1, 1003, 9999, good);
+        vm.expectRevert(bytes("commitment already registered")); sys.replaceVoter(1, 1002, 1003, good);
+        vm.stopPrank();
+    }
+    function test_replaceOnlyAdmin() public {
+        uint256[] memory leaves = _arr(1001, 1002, 1003);
+        vm.startPrank(admin);
+        for (uint256 i = 0; i < 3; i++) sys.registerVoter(leaves[i]);
+        vm.stopPrank();
+        uint256[16] memory sib = _siblings(leaves, 1);
+        vm.expectRevert(bytes("only election admin")); sys.replaceVoter(1, 1002, 9999, sib);
+    }
+
     uint256 constant INIT = 14408838593220040598588012778523101864903887657864399481915450526643617223637;
 
     // 배치 k 의 공개 신호 (castVote 에서 i 번째 표 = (i+7, i+9, i+11))

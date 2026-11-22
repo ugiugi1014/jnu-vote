@@ -355,7 +355,6 @@ function VerificationFileModal({ request, token, onClose, onDecision }) {
 function AgendaSection({ token }) {
   const api = useMemo(() => createApi(token), [token]);
   const [elections, setElections] = useState([]);
-  const [selectedElectionId, setSelectedElectionId] = useState("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -363,15 +362,11 @@ function AgendaSection({ token }) {
   const [editTarget, setEditTarget] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const selectedElection = elections.find((election) => String(election.id) === String(selectedElectionId));
-  const canIssueSelectedTokens = ["pending", "active"].includes(selectedElection?.status) && Boolean(selectedElection.token_contract_address);
-
   const loadElections = useCallback(async () => {
     setLoading(true);
     try {
       const rows = await api("/elections");
       setElections(rows || []);
-      setSelectedElectionId((current) => current || (rows?.length ? String(rows[0].id) : ""));
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -508,12 +503,6 @@ function AgendaSection({ token }) {
     await runAction("선거 삭제", () => api(`/elections/${id}`, { method: "DELETE" }));
   };
 
-  const issueTokens = async () => {
-    if (!selectedElectionId) return alert("토큰을 발급할 선거를 선택하세요.");
-    if (!canIssueSelectedTokens) return alert("토큰 발급은 대기 상태이고 VotingToken 주소가 등록된 선거에서만 가능합니다.");
-    await runAction("토큰 발급", () => api(`/elections/${selectedElectionId}/tokens/issue`, { method: "POST", body: JSON.stringify({}) }));
-  };
-
   const tallyElection = async (id) => {
     await runAction("개표", () => api(`/elections/${id}/tally`, { method: "POST" }));
   };
@@ -522,17 +511,12 @@ function AgendaSection({ token }) {
     <>
       <div className="admin-page-header">
         <h2>선거 관리</h2>
-        <p>선거 생성, 후보 등록, 컨트랙트 주소 등록, 시작/종료, 토큰 발급, 개표를 처리합니다.</p>
+        <p>선거 생성, 후보 등록, 컨트랙트 배포, 시작/종료, 개표를 처리합니다.</p>
       </div>
 
       <div className="toolbar">
         <input className="search-input" type="text" placeholder="선거 검색" value={search} onChange={(event) => setSearch(event.target.value)} />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <select className="form-select" style={{ width: 240 }} value={selectedElectionId} onChange={(event) => setSelectedElectionId(event.target.value)}>
-            <option value="">토큰 발급 선거 선택</option>
-            {elections.map((election) => <option key={election.id} value={election.id}>{election.title}</option>)}
-          </select>
-          <button className="action-btn info" onClick={issueTokens} disabled={!canIssueSelectedTokens}>토큰 일괄 발급</button>
           <button className="btn-primary" onClick={() => setShowCreate(true)}><PlusIcon />선거 생성</button>
         </div>
       </div>
@@ -610,8 +594,6 @@ function VoterSection({ token }) {
   const [message, setMessage] = useState("");
   const [voterInput, setVoterInput] = useState("");
   const [voterUploadMsg, setVoterUploadMsg] = useState("");
-  const selectedElection = elections.find((election) => String(election.id) === String(selectedElectionId));
-  const canIssueSelectedTokens = ["pending", "active"].includes(selectedElection?.status) && Boolean(selectedElection.token_contract_address);
 
   const loadVerifications = useCallback(async (status) => {
     try {
@@ -669,21 +651,6 @@ function VoterSection({ token }) {
     }
   };
 
-  const issueTokens = async () => {
-    if (!selectedElectionId) return alert("선거를 선택하세요.");
-    if (!canIssueSelectedTokens) return alert("토큰 발급은 대기 상태이고 VotingToken 주소가 등록된 선거에서만 가능합니다.");
-    try {
-      const result = await api(`/elections/${selectedElectionId}/tokens/issue`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      setMessage(`토큰 ${result.count || 0}건 발급 완료${result.txHash ? ` (${result.txHash.slice(0, 10)}...)` : ""}`);
-      await loadVoters(selectedElectionId);
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
   const uploadVoters = async () => {
     if (!selectedElectionId) return alert("선거를 선택하세요.");
     const lines = voterInput
@@ -698,7 +665,7 @@ function VoterSection({ token }) {
         body: JSON.stringify({ student_ids: lines }),
       });
       setVoterUploadMsg(
-        `등록 완료 — 총 ${result.total}명 / 즉시 발급 ${result.issued}명 / 보류 ${result.pending}명`
+        `등록 완료 — 총 ${result.total}명 (학생은 투표 화면에서 투표 키를 직접 등록합니다)`
       );
       setVoterInput("");
       await loadVoters(selectedElectionId);
@@ -723,7 +690,7 @@ function VoterSection({ token }) {
     <>
       <div className="admin-page-header">
         <h2>유권자 관리</h2>
-        <p>재학증명서 인증 요청을 승인/거절하고 선거별 토큰 발급 및 유권자 상태를 확인합니다.</p>
+        <p>재학증명서 인증 요청을 승인/거절하고 선거별 명단과 투표 키 등록 여부를 확인합니다.</p>
       </div>
 
       <div className="inner-tab-bar">
@@ -739,7 +706,6 @@ function VoterSection({ token }) {
             <option value="">선거 선택</option>
             {elections.map((election) => <option key={election.id} value={election.id}>{election.title}</option>)}
           </select>
-          <button className="action-btn info" onClick={issueTokens} disabled={!canIssueSelectedTokens}>선택 선거 토큰 발급</button>
         </div>
       </div>
 

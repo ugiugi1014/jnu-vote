@@ -268,13 +268,16 @@ pending → active → closed → tallied
 
 ## `GET /elections/:id/my-eligibility` (익명 투표 전환 후)
 
-**권한**: 로그인. **응답**: `{ eligible: true, registered: boolean, contract_address }` 또는 `{ eligible: false, reason }`
+**권한**: 로그인. pending(시작 전)과 active 에서 응답한다 (미리 투표 키를 등록할 수 있게).
+**응답**: `{ eligible: true, registered: boolean, can_replace: boolean, status: "pending"|"active", contract_address }` 또는 `{ eligible: false, reason }`
 (reason: `election_not_active`, `contract_not_deployed`, `not_in_voter_list`, `not_verified`, `wallet_not_registered`)
+`can_replace` = 등록됨 + 시작 전 → 투표 키를 잃었으면 새 키로 교체 가능.
 토큰·가스 발급 없음, `already_voted` 없음 (서버는 누가 투표했는지 모름).
 
 ## `POST /elections/:id/register-commitment`
 
-**권한**: 로그인. **본문**: `{ "commitment": "<10진수 문자열>" }` — `Poseidon(secret)`, secret 은 학생 브라우저에만 있음.
+**권한**: 로그인. **본문**: `{ "commitment": "<10진수 문자열>", "replace": false }` — `Poseidon(secret)`, secret 은 학생만 앎 (`secret = Poseidon(seed, 선거주소)`, seed = 패스키 PRF 또는 복구 코드).
 자격 확인 후 `VotingSystem.registerVoter(commitment)` 호출. 선거 상태 pending / active 에서 가능.
-**응답**: 200 `{ message, txHash }` / 409 `already_registered` (학생 1명당 선거별 1회) / 403 자격 없음 / 400 형식 오류.
-DB 에는 `voters.commitment_registered_at` 만 기록하고 commitment 값은 저장하지 않는다.
+`replace: true` → 기존 commitment 를 교체 (`VotingSystem.replaceVoter`). pending 에서만, 컨트랙트도 표가 0개일 때만 허용.
+**응답**: 200 `{ message, txHash }` / 409 `already_registered` (학생 1명당 선거별 1개) · `not_registered` · `replace_closed` / 403 자격 없음 / 400 형식 오류.
+DB 에는 `voters.commitment_registered_at` 과 (시작 전까지만) `commitment_leaf_index` 를 기록하고 commitment 값은 저장하지 않는다. 선거 시작 시 leaf index 는 NULL 로 지운다.

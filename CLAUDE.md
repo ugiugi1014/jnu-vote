@@ -13,7 +13,7 @@
 - 백엔드: Node.js + Express, MySQL (mysql2 pool, `db.getConnection()` 트랜잭션)
 - 컨트랙트: Solidity, ElectionFactory(EIP-1167 clone), VotingSystem(유권자 머클 트리 포함), PoseidonHasher(온체인 Poseidon), VotingToken(익명 전환 후 투표에 미사용), verifier 2종(VoteVerifier/TallyVerifier)
 - ZKP: Circom 2.x + snarkjs, Groth16. voteProof.circom / tally.circom
-- 외부: KICA(doculink) 재학증명 진위확인, OCR(Gemini/Ollama)
+- 외부: KICA(doculink) 재학증명 진위확인, OCR(Gemini/Ollama — 서버 `POST /verification/ocr` 에서 호출, 키는 서버에만)
 
 ## 디렉터리 (루트: C:\Users\dlsrn\vote)
 
@@ -40,7 +40,7 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
 ## 키 설계 (요약)
 
 - 인앱 지갑: `privateKey = HKDF(webmail + serverSecret)`. localStorage 없음, 로그인 시마다 동일 지갑 복원. 개인키는 브라우저 메모리에만. (createWallet은 `{address, privateKey, wallet(ethers.Wallet)}` 래퍼 반환 — VoteDetailPage는 `new ethers.Wallet(wallet.privateKey)`로 사용)
-- **익명 신원 (3단계)**: 투표 화면 첫 진입 시 브라우저가 랜덤 `secret` 생성 → localStorage(`jnu-vote:voter-secret:<선거주소>`)에만 저장 → `commitment = Poseidon(secret)` 만 `POST /elections/:id/register-commitment` 로 전송 → 서버가 학번·자격 확인 후 `VotingSystem.registerVoter(commitment)` (학생 1명당 선거별 1회, DB 에는 등록 시각만, commitment 값은 체인에만). 컨트랙트가 깊이 16 증분 머클 트리(Poseidon) 유지, 최근 root 30개 인정.
+- **익명 신원 (3단계 + 2026-11)**: `seed` = 패스키 PRF 출력(권장) 또는 복구 코드(128비트). localStorage(`jnu-vote:voter-seed`)는 캐시. `secret = Poseidon(seed, 선거주소)` (이전 버전의 선거별 저장값 `jnu-vote:voter-secret:<주소>`도 읽음) → `commitment = Poseidon(secret)` 만 `POST /elections/:id/register-commitment` 로 전송 → 서버가 학번·자격 확인 후 `VotingSystem.registerVoter(commitment)` (학생 1명당 선거별 1회, DB 에는 등록 시각만, commitment 값은 체인에만). 컨트랙트가 깊이 16 증분 머클 트리(Poseidon) 유지, 최근 root 30개 인정.
 - `nullifier = Poseidon(secret, scope)`, scope = 선거 컨트랙트 주소 (선거 간 연결 불가). 지갑 개인키 기반 secret 은 서버가 재계산 가능해서 제거.
 - 투표 제출은 **relayer**: 프론트가 증명을 `POST /vote/relay` 로 **로그인 토큰 없이** 보내고, 서버 관리자 지갑이 castVote (staticCall 로 사전 검증 후 전송). 학생 지갑·토큰·가스 불필요. `/vote/confirm`(학번-표 연결 저장)은 410.
 - 코디네이터 키(BabyJubJub): 선거 생성 시 자동 생성. `coord_private_key`=10진수 스칼라(DB), `coord_public_key`=JSON {x,y}. 선거 시작 시 `configureElection(x, y, numCandidates)`로 체인 고정. 개표(체인 기록 성공) 후 NULL 폐기. ADMIN_WALLET_PRIVATE_KEY(컨트랙트 서명용)와 별개.
@@ -50,14 +50,14 @@ zkp/                    tally 산출물 (keys/tally_final.zkey[gitignore], build
   표를 50개씩 배치로 나눠 배치마다 증명(**표 수 제한 없음**). 배치 사이에는 `Poseidon(누적득표[5], salt)` 커밋먼트만 이어지고 최종 득표는 마지막 배치에서만 공개. salt_k = Poseidon(coordPriv, k+1) (결정적 → 실패 후 재실행 시 체인에 기록된 배치부터 이어서 진행).
 - 프론트 증명 생성은 `src/workers/voteProofWorker.js` (Web Worker). 회로 파일은 투표 화면 진입 시 미리 로드.
 - **익명성/이중투표**: 1인1표 = 학번당 commitment 1개(서버가 등록 시 확인) + nullifier 중복 차단(컨트랙트). 서버는 누가 등록했는지는 알지만, 어떤 표가 어떤 commitment 인지는 모름. 남는 가정: relayer(=서버)가 요청 IP·시간으로 추측하지 않는다, 등록 직후 바로 투표하면 시점으로 추측될 여지(일찍 등록 권장).
-- secret 을 잃으면(브라우저 변경/기록 삭제) 그 선거엔 투표 불가 (재등록 허용 시 2표 가능해지므로 막음).
+- 키 분실: 패스키/복구 코드로 복원(체인 트리에 commitment 가 있는지 확인 후 캐시). 시작 전(pending, 표 0개)에는 `replace: true` 로 교체 → `VotingSystem.replaceVoter`(경로 증명 + root 기록 초기화). 서버는 교체용 `voters.commitment_leaf_index` 를 시작 때 NULL 로 지움. 시작 후에는 교체 불가.
 
 ## 자격 모델 (익명 투표 전환 후)
 
 자격 2층: **재학인증(전역, user_verifications)** + **선거자격(명단, election_student_list, 선거별)**.
 - 관리자가 학번 명단 업로드(`POST /:id/voters/bulk`) → election_student_list 생성.
 - 학생은 투표 화면 진입 시 `GET /:id/my-eligibility`(자격 + 등록 여부) → 미등록이면 브라우저가 secret 생성 후 `POST /:id/register-commitment`.
-- 투표는 relayer 제출이라 토큰·가스 드립 불필요. (기존 issueToken/fundVoterGas 코드는 남아 있으나 투표 경로에서 사용하지 않음 — 정리 대상)
+- 투표는 relayer 제출이라 토큰·가스 드립 불필요. (2026-11: 명단 업로드의 토큰·가스 발급 제거, `/tokens/issue` 410, `fundVoterGas` 삭제. VotingToken clone 은 팩토리 호환용으로만 남음)
 - 관리자 유권자 목록은 "투표 키 등록 여부"만 표시 (개인별 투표 여부는 알 수 없음).
 
 ---
@@ -91,7 +91,8 @@ VotingSystem.recordTallyBatch(batchIndex, ..., uint[160]) 가 배치 순서, 저
 5. ElectionFactory(D, C, A, B, H) 배포 → F  (검증자·해셔 주소가 immutable로 clone에 주입됨)
 6. `server/.env` FACTORY_ADDRESS = F
 7. VotingSystem.sol 컴파일 ABI 전체를 front/user/src/abi/VotingSystem.json에 교체 (드롭다운에서 VotingSystem 선택 — Groth16Verifier 아님)
-7-1. DB 마이그레이션 `server/src/db/migrations/20261014_anonymous_voting.sql` 적용 (voters.commitment_registered_at 추가, 기존 학번-표 연결 데이터 삭제)
+7-1. DB 마이그레이션 `server/src/db/migrations/20261014_anonymous_voting.sql` 적용 (voters.commitment_registered_at 추가, 기존 학번-표 연결 데이터 삭제), `20261122_commitment_replace.sql` (voters.commitment_leaf_index)
+7-2. `server/.env`: `COORD_KEY_ENCRYPTION_KEY`(코디 개인키 DB 암호화, 별도 백업), OCR 설정(`OCR_PROVIDER`/`GEMINI_API_KEY`/`OLLAMA_*`, 프론트에서 서버로 이동), 필요 시 `RELAY_RATE_*`, `TRUST_PROXY`
 8. tally 산출물(zkp/build/tally_js wasm, zkp/keys/tally_final.zkey, tally_verification_key.json)이 새 회로(배치, 160 공개 신호)인지 확인
 
 배포 후: AdminPage `POST /:id/deploy` → Factory.createElection → VotingSystem+VotingToken clone + 주소 자동 등록.
@@ -126,6 +127,12 @@ VotingSystem.recordTallyBatch(batchIndex, ..., uint[160]) 가 배치 순서, 저
 - **(해결) RPC URL 브라우저 노출**: 프론트가 VITE_RPC_URL을 클라이언트 번들에 그대로 넣어 Alchemy 키가 유출되던 문제 → front/user/.env의 VITE_RPC_URL을 **키 없는 공개 Sepolia RPC(`https://ethereum-sepolia-rpc.publicnode.com`)** 로 교체. Alchemy 키는 서버 RPC_URL에만 보관. 프론트는 castVote 전송(VoteDetailPage:95) 한 곳만 RPC를 쓰므로 공개 RPC로 충분. 레이트리밋 걸리면 `https://1rpc.io/sepolia`·`https://sepolia.drpc.org`로 교체하거나 백엔드 프록시로 승급. (front .env는 gitignore라 환경마다 별도 설정 필요)
 - **가스 모델**: fundVoterGas는 드립 방식. 운영은 릴레이어/메타트랜잭션 고려.
 - **CLAUDE.md/익명성 모델 서술**: 과거 "다른 지갑 동일인→nullifier 동일"은 부정확(위 키 설계 참고).
+
+## 테스트
+
+- 컨트랙트: `cd blockchain/foundry && forge test` (forge-std 는 lib/ 에 설치, `npm install` 은 blockchain/ 에서)
+- 서버: `cd server && npm test` (node:test, DB·체인은 테스트 안에서 가짜로 대체)
+- 프론트: `cd front/user && npm test` (voterIdService), `npx vite build`
 
 ## 작업 원칙
 
