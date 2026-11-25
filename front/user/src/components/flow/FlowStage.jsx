@@ -1,6 +1,7 @@
 // 흐름 무대: 세 주체(학생 브라우저·서버·블록체인)의 상자 안에 이번 단계에서 하는 계산이 차례로 켜지고,
 // 주체 사이에 오가는 데이터는 실제 값이 적힌 카드로 아래 통로를 따라 움직인다.
 import { useEffect, useState } from "react";
+import AppPhone from "./AppPhone";
 
 const ACTORS = [
   { id: "student", title: "학생 브라우저", role: "투표하는 사람의 기기", x: 16.5 },
@@ -50,8 +51,13 @@ export default function FlowStage({ step, sample }) {
   if (sendBeat) { busy.add(sendBeat.send[0]); busy.add(sendBeat.send[1]); }
   const finished = cur >= beats.length;
 
+  // 휴대폰 화면: 지금 칸의 화면, 시작 전엔 첫 칸, 끝나면 마지막 칸 (단계에 칸이 없으면 결과 화면)
+  const app = beats.length ? beats[Math.min(Math.max(cur, 0), beats.length - 1)].app : null;
+
   return (
     <div className="hiw-stage">
+      <AppPhone app={app} />
+      <div className="hiw-stage-main">
       <div className="hiw-stage-row">
         {ACTORS.map((a) => {
           const ops = beats.map((b, i) => ({ b, i })).filter(({ b }) => b.at === a.id);
@@ -112,6 +118,7 @@ export default function FlowStage({ step, sample }) {
           <span className="hiw-beat-no">{beats.length ? `${Math.min(cur + 1, beats.length)} / ${beats.length}` : ""}</span>
           {beats.length > 0 && <button className="hiw-btn ghost small" onClick={() => setRun((r) => r + 1)}>다시 재생</button>}
         </div>
+      </div>
       </div>
     </div>
   );

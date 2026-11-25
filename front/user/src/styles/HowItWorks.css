@@ -6,12 +6,13 @@
 .hiw-back { background: none; border: none; font: inherit; font-size: 14px; color: #444; cursor: pointer; padding: 4px 0; }
 .hiw-back:hover { color: #111; }
 
-.hiw-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; padding: 12px 28px; align-items: start; }
+.hiw-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; padding: 12px 28px; align-items: start; }
 .hiw-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 /* 흐름 무대 */
-.hiw-stage { background: #fff; border: 1px solid #e3e6ea; border-radius: 14px; padding: 18px 18px 12px; overflow-x: auto; }
-.hiw-stage-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4%; min-width: 760px; align-items: stretch; }
+.hiw-stage { background: #fff; border: 1px solid #e3e6ea; border-radius: 14px; padding: 18px 18px 12px; overflow-x: auto; display: flex; gap: 20px; align-items: flex-start; }
+.hiw-stage-main { flex: 1; min-width: 640px; }
+.hiw-stage-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4%; align-items: stretch; }
 .hiw-actor { border: 2px solid #d6dae0; border-radius: 14px; background: #fafbfc; display: flex; flex-direction: column; min-height: 330px; transition: border-color 0.3s, box-shadow 0.3s, opacity 0.3s; }
 .hiw-actor.idle { opacity: 0.4; }
 .hiw-actor.busy { border-color: #1a5fa8; box-shadow: 0 6px 22px rgba(26, 95, 168, 0.18); background: #fff; }
@@ -33,7 +34,7 @@
 .hiw-op-val.mono, .hiw-packet-val.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
 
 /* 네트워크 통로와 데이터 카드 */
-.hiw-lane { position: relative; height: 118px; min-width: 760px; }
+.hiw-lane { position: relative; height: 118px; }
 .hiw-lane-line { position: absolute; left: 16.5%; right: 16.5%; top: 34px; border-top: 2px dashed #cfd4db; }
 .hiw-lane-name { position: absolute; left: 50%; top: 40px; transform: translateX(-50%); font-size: 11.5px; color: #9aa1ab; }
 .hiw-stub { position: absolute; top: 0; width: 0; height: 34px; border-left: 2px dashed #cfd4db; transition: border-color 0.3s; }
@@ -124,3 +125,78 @@
 /* 체험 안내 패널이 열려 있어도 같이 밀린다 (body padding-right 로 처리됨) */
 .login-howitworks { display: block; margin: 14px auto 0; background: none; border: none; font: inherit; font-size: 13.5px; color: #1a5fa8; cursor: pointer; text-decoration: underline; }
 .demo-howitworks-btn { margin-top: 8px; }
+
+/* 학생 휴대폰 화면 (실제 앱 모양을 작게 옮김) */
+.ap-wrap { flex: 0 0 262px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ap-label { font-size: 12.5px; font-weight: 700; color: #1a5fa8; }
+.ap-phone { position: relative; width: 262px; height: 540px; border-radius: 36px; background: #111; padding: 10px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22); }
+.ap-notch { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: 76px; height: 18px; border-radius: 10px; background: #111; z-index: 5; }
+.ap-screen { position: relative; width: 100%; height: 100%; border-radius: 27px; overflow: hidden; background: #f0f2f5; color: #111; font-size: 11.5px; animation: ap-in 0.35s ease-out; display: flex; flex-direction: column; }
+@keyframes ap-in { from { opacity: 0.4; } to { opacity: 1; } }
+.ap-head { display: flex; align-items: center; gap: 7px; background: #fff; padding: 30px 12px 9px; border-bottom: 1px solid #e5e7eb; }
+.ap-head.small { justify-content: space-between; }
+.ap-logo { width: 26px; height: 26px; object-fit: contain; }
+.ap-logo-s { width: 18px; height: 18px; object-fit: contain; }
+.ap-brand { font-size: 12.5px; font-weight: 800; }
+.ap-brand-sub { font-size: 8.5px; color: #9aa1ab; }
+.ap-back { font-size: 11px; color: #444; }
+.ap-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; flex: 1; overflow: hidden; }
+.ap-h1 { font-size: 16px; font-weight: 800; }
+.ap-tabs { display: flex; gap: 2px; background: #e5e7eb; border-radius: 8px; padding: 3px; align-self: flex-start; }
+.ap-tabs span { padding: 3px 9px; border-radius: 6px; color: #6b7280; font-size: 10.5px; }
+.ap-tabs span.on { background: #fff; color: #111; font-weight: 700; }
+.ap-card { position: relative; background: #fff; border-radius: 12px; padding: 10px; border: 1px solid #eceef1; display: flex; flex-direction: column; gap: 5px; }
+.ap-badge { align-self: flex-start; background: #22c55e; color: #fff; font-size: 9.5px; border-radius: 999px; padding: 2px 7px; }
+.ap-badge.gray { background: #9aa1ab; }
+.ap-el { flex-direction: row; align-items: center; gap: 9px; }
+.ap-el-icon { width: 28px; height: 28px; border-radius: 50%; background: #1a5fa8; color: #fff; display: grid; place-items: center; font-size: 13px; flex-shrink: 0; }
+.ap-el-title { font-size: 12.5px; font-weight: 800; }
+.ap-muted { font-size: 10px; color: #8a919b; line-height: 1.45; }
+.ap-muted.center, .center { text-align: center; }
+.ap-sec { font-size: 13px; font-weight: 800; margin-top: 2px; }
+.ap-sec2 { font-size: 12.5px; font-weight: 800; }
+.ap-btn { position: relative; background: #111; color: #fff; border-radius: 9px; padding: 8px; text-align: center; font-weight: 700; font-size: 11px; }
+.ap-btn.ghost { background: #fff; color: #333; border: 1px solid #d6dae0; }
+.ap-btn.disabled { background: #c9ccd1; }
+.ap-btn.sm { padding: 6px 10px; }
+.ap-btn.right { align-self: flex-end; }
+.ap-input { background: #fff; border: 1px solid #d6dae0; border-radius: 9px; padding: 8px; font-size: 10.5px; color: #9aa1ab; }
+.ap-input.filled { color: #111; }
+.ap-input.code { letter-spacing: 2px; text-align: center; font-weight: 700; }
+.ap-login { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 9px; padding: 20px 16px; background: #fff; }
+.ap-login-logo { width: 46px; height: 46px; object-fit: contain; align-self: center; }
+.ap-login-title { text-align: center; font-size: 15px; font-weight: 800; }
+.ap-cand { flex-direction: row; align-items: center; gap: 9px; }
+.ap-cand.on { border: 2px solid #111; }
+.ap-cand-no { width: 24px; height: 24px; border-radius: 50%; background: #eceef1; display: grid; place-items: center; font-weight: 700; flex-shrink: 0; }
+.ap-cand.on .ap-cand-no { background: #111; color: #fff; }
+.ap-cand-name { font-size: 11.5px; font-weight: 700; }
+.ap-check { margin-left: auto; font-weight: 800; }
+.ap-ok { background: #ecfdf3; color: #067647; border-radius: 9px; padding: 7px 9px; font-size: 10.5px; font-weight: 700; }
+.ap-bottom { display: flex; gap: 6px; padding: 8px 10px 14px; background: #fff; border-top: 1px solid #e5e7eb; }
+.ap-bottom .ap-btn { flex: 1; }
+.ap-busy { display: flex; align-items: center; gap: 6px; justify-content: center; background: #111; color: #fff; border-radius: 9px; padding: 7px; font-size: 10.5px; }
+.ap-busy.inline { background: #f2f4f7; color: #374151; justify-content: flex-start; }
+.ap-spin { width: 10px; height: 10px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: ap-rot 0.8s linear infinite; }
+@keyframes ap-rot { to { transform: rotate(360deg); } }
+.ap-modal { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; padding: 14px; }
+.ap-modal-box { background: #fff; border-radius: 14px; padding: 14px; width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.ap-stage { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #9aa1ab; }
+.ap-stage.now { color: #111; font-weight: 700; }
+.ap-stage.done { color: #067647; }
+.ap-stage-dot { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid currentColor; display: grid; place-items: center; font-size: 9px; flex-shrink: 0; }
+.ap-stage.now .ap-stage-dot { border: none; }
+.ap-bar { height: 5px; background: #eceef1; border-radius: 3px; overflow: hidden; }
+.ap-bar span { display: block; height: 100%; width: 15%; background: #1a5fa8; }
+.ap-bar span.run { animation: ap-bar 1.7s ease-in-out forwards; }
+@keyframes ap-bar { from { width: 15%; } to { width: 92%; } }
+.ap-done { background: #fff; border-radius: 14px; padding: 22px 12px; display: flex; flex-direction: column; align-items: center; gap: 7px; margin-top: 30px; }
+.ap-done-icon { width: 44px; height: 44px; border-radius: 50%; background: #22c55e; color: #fff; display: grid; place-items: center; font-size: 22px; font-weight: 800; }
+.ap-receipt { background: #f6f7f9; border-radius: 9px; padding: 8px; width: 100%; text-align: center; margin-top: 4px; }
+.ap-mono { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+.ap-res-top { display: flex; justify-content: space-between; font-size: 11.5px; }
+.ap-res-bar { height: 6px; background: #eceef1; border-radius: 3px; overflow: hidden; }
+.ap-res-bar span { display: block; height: 100%; background: #1a5fa8; }
+.ap-tap { position: absolute; right: 18%; top: 50%; width: 22px; height: 22px; margin-top: -11px; border-radius: 50%; background: rgba(26, 95, 168, 0.45); box-shadow: 0 0 0 0 rgba(26, 95, 168, 0.5); animation: ap-tap 1.1s ease-out infinite; pointer-events: none; }
+@keyframes ap-tap { 0% { transform: scale(0.6); box-shadow: 0 0 0 0 rgba(26, 95, 168, 0.5); } 70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(26, 95, 168, 0); } 100% { box-shadow: 0 0 0 0 rgba(26, 95, 168, 0); } }
+@media (max-width: 1100px) { .ap-wrap { display: none; } }
