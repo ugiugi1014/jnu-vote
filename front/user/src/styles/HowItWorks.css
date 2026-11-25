@@ -217,3 +217,21 @@
 .hiw-why-item { border-left: 3px solid #1a5fa8; padding: 2px 0 2px 12px; }
 .hiw-why-q { font-size: 14.5px; font-weight: 700; color: #1d2330; }
 .hiw-why-a { font-size: 14px; color: #4b5563; line-height: 1.65; margin-top: 3px; }
+
+/* 공격 장면 */
+.hiw-stage.attack { border-color: #f1c0bb; box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.08); }
+.hiw-actor { position: relative; }
+.hiw-actor.bad { border-color: #b42318; background: #fff6f5; }
+.hiw-actor.bad .hiw-actor-title { color: #b42318; }
+.hiw-actor.bad.busy { box-shadow: 0 6px 22px rgba(180, 35, 24, 0.22); }
+.hiw-op.evil.now, .hiw-op.evil.done { border-color: #f1c0bb; }
+.hiw-op.evil.now { background: #fef3f2; box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.15); }
+.hiw-op.blocked { border: 2px solid #b42318; background: #fef3f2; }
+.hiw-op.blocked .hiw-op-val { font-weight: 800; }
+.hiw-packet-card.evil { background: #b42318; box-shadow: 0 8px 20px rgba(180, 35, 24, 0.35); }
+.hiw-caption-who.evil { background: #b42318; }
+.hiw-raw { color: #b42318; }
+.ap-label.evil { color: #b42318; }
+.hiw-stamp { position: absolute; z-index: 3; top: 72%; left: 50%; transform: translate(-50%, -50%) rotate(-14deg); border: 5px solid #b42318; color: #b42318; background: rgba(255, 255, 255, 0.85); font-size: 36px; font-weight: 900; letter-spacing: 6px; white-space: nowrap; padding: 4px 16px 4px 22px; border-radius: 12px; animation: hiw-stamp 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both; pointer-events: none; }
+@keyframes hiw-stamp { from { opacity: 0; transform: translate(-50%, -50%) rotate(-14deg) scale(2.2); } to { opacity: 1; transform: translate(-50%, -50%) rotate(-14deg) scale(1); } }
+.hiw-attack.on { border-color: #b42318; background: #fffafa; }

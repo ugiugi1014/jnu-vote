@@ -202,10 +202,10 @@ function Screen({ a }) {
   }
 }
 
-export default function AppPhone({ app }) {
+export default function AppPhone({ app, attack }) {
   return (
     <div className="ap-wrap">
-      <div className="ap-label">학생이 보는 앱 화면</div>
+      <div className={`ap-label ${attack ? "evil" : ""}`}>{attack ? "공격 장면" : "학생이 보는 앱 화면"}</div>
       <div className="ap-phone">
         <div className="ap-notch" />
         <div className="ap-screen" key={app ? JSON.stringify(app) : "result"}>

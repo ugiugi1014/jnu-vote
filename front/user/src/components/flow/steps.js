@@ -132,7 +132,7 @@ const RAW_STEPS = [
       ["relay (대신 제출)", "학생 지갑·토큰·가스 불필요. 제출 전 staticCall 로 미리 검증"],
       ["검사 순서", "nullifier 중복 → 명단 root(최근 30개) → 증명 검증 → 저장"],
     ],
-    attacks: ["double", "outsider"],
+    attacks: ["double", "outsider", "swap"],
   },
   {
     id: "tally",

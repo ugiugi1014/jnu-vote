@@ -4,6 +4,8 @@ import FlowStage from "../components/flow/FlowStage";
 import { makeSample } from "../components/flow/sample";
 import TryIt from "../components/flow/TryIt";
 import AttackPanel from "../components/flow/AttackPanel";
+import { ATTACKS, runAttack } from "../components/flow/attacks";
+import { durationOf } from "../components/flow/timing";
 import { STEPS, ACTORS } from "../components/flow/steps";
 import "../styles/HowItWorks.css";
 
@@ -55,6 +57,19 @@ export default function HowItWorksPage({ onBack }) {
     return () => { alive = false; };
   }, []);
   const step = STEPS[index];
+
+  // 공격 장면: 누르면 흐름도가 공격 장면으로 바뀌고, 동시에 데모 체인에 실제로 시도한다
+  const [attack, setAttack] = useState(null);
+  const startAttack = (kind) => {
+    const run = Date.now();
+    setAttack({ kind, run, step: index, script: ATTACKS[kind], result: null, revealed: false });
+    // 왼쪽 결과는 흐름도 장면이 끝난 뒤에 보여 준다 (결말을 먼저 보여 주지 않게)
+    setTimeout(() => setAttack((cur) => (cur && cur.run === run ? { ...cur, revealed: true } : cur)), durationOf(ATTACKS[kind].beats));
+    runAttack(kind)
+      .catch((err) => ({ live: true, blocked: false, raw: err.message, reason: `오류: ${err.message}`, lines: [] }))
+      .then((result) => setAttack((cur) => (cur && cur.run === run ? { ...cur, result } : cur)));
+  };
+  const activeAttack = attack && attack.step === index ? attack : null; // 단계를 넘기면 원래 흐름
 
   const showDetail = !!openFold[`${index}:detail`];
   const showTry = !!openFold[`${index}:try`];
@@ -128,13 +143,13 @@ export default function HowItWorksPage({ onBack }) {
           {step.attacks && (
             <div className="hiw-fold">
               <div className="hiw-section-title">공격 시도</div>
-              <AttackPanel kinds={step.attacks} />
+              <AttackPanel kinds={step.attacks} attack={activeAttack} onAttack={startAttack} />
             </div>
           )}
         </aside>
 
         <div className="hiw-left">
-          <FlowStage step={step} sample={sample} showFormula={showFormula} />
+          <FlowStage step={step} sample={sample} showFormula={showFormula} attack={activeAttack} onExitAttack={() => setAttack(null)} />
           <KnowsTable step={step} />
         </div>
 

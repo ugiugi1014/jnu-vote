@@ -41,6 +41,12 @@ async function newSecret(electionAddress) {
 }
 const commitmentOf = (secret) => hash([secret]);
 
+/** 시드용: 같은 (라벨, 선거 주소)면 언제나 같은 투표권 → 시드를 다시 돌려도 이어서 투표할 수 있다 */
+async function seedSecret(label, electionAddress) {
+  const seed = BigInt("0x" + crypto.createHash("sha256").update(label).digest("hex")) % FIELD;
+  return hash([seed, BigInt(electionAddress)]);
+}
+
 async function merklePath(commitments, leaf) {
   const H = (a, b) => hash([a, b]);
   const leaves = commitments.map(BigInt);
@@ -108,4 +114,4 @@ async function castVote({ api, provider, election, secret, candidateId }) {
   return { status: r.status, data: await r.json().catch(() => ({})) };
 }
 
-module.exports = { newSecret, commitmentOf, castVote };
+module.exports = { newSecret, seedSecret, commitmentOf, castVote };

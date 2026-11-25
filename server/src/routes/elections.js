@@ -318,7 +318,7 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
       "function configureElection(uint256 coordPubX, uint256 coordPubY, uint256 numCandidates) external",
       "function openElection() external",
     ];
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL, undefined, { cacheTimeout: -1 }) /* 캐시를 끄지 않으면 관리자 지갑 nonce 가 겹칠 수 있음 */;
     const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
     const votingSystem = new ethers.Contract(
       election.contract_address,
@@ -1205,12 +1205,12 @@ router.post("/:id/register-commitment", auth, async (req, res) => {
       // 투표 키 교체: 시작 전에만, 이미 등록된 학생만
       if (!already) {
         await conn.rollback();
-        return res.status(409).json({ message: "등록된 투표 키가 없습니다.", reason: "not_registered" });
+        return res.status(409).json({ message: "등록된 투표권이 없습니다.", reason: "not_registered" });
       }
       const leafIndex = lockRows[0].commitment_leaf_index;
       if (r.election.status !== ELECTION_STATUS.PENDING || leafIndex == null) {
         await conn.rollback();
-        return res.status(409).json({ message: "선거 시작 후에는 투표 키를 교체할 수 없습니다.", reason: "replace_closed" });
+        return res.status(409).json({ message: "선거 시작 후에는 투표권을 교체할 수 없습니다.", reason: "replace_closed" });
       }
       const { buildMerklePath } = require("../services/voterTree");
       const all = (await contract.getCommitments()).map((x) => BigInt(x));
@@ -1221,7 +1221,7 @@ router.post("/:id/register-commitment", auth, async (req, res) => {
       await tx.wait();
       await conn.query(`UPDATE voters SET commitment_registered_at = NOW() WHERE id = ?`, [r.voter.id]);
       await conn.commit();
-      return res.json({ message: "투표 키 교체 완료", txHash: tx.hash });
+      return res.json({ message: "투표권 교체 완료", txHash: tx.hash });
     }
 
     if (already) {
@@ -1286,7 +1286,7 @@ router.post("/:id/deploy", auth, adminOnly, async (req, res) => {
 
     const { ethers } = require("ethers");
 
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL, undefined, { cacheTimeout: -1 }) /* 캐시를 끄지 않으면 관리자 지갑 nonce 가 겹칠 수 있음 */;
     const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
     const factory = new ethers.Contract(
       process.env.FACTORY_ADDRESS,

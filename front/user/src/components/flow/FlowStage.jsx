@@ -2,6 +2,7 @@
 // 주체 사이에 오가는 데이터는 실제 값이 적힌 카드로 아래 통로를 따라 움직인다.
 import { useEffect, useState } from "react";
 import AppPhone from "./AppPhone";
+import { START_MS, OP_MS, SEND_MS } from "./timing";
 
 const ACTORS = [
   { id: "student", title: "학생 브라우저", role: "투표하는 사람의 기기", x: 16.5 },
@@ -22,19 +23,19 @@ const valueOf = (beat, sample) => {
   return beat.val.map((k) => short(sample[k])).join(", ");
 };
 
-// 칸 하나가 머무는 시간: 자막을 끝까지 읽을 수 있게 넉넉히
-const OP_MS = 3500;
-const SEND_MS = 4500; // 데이터 카드가 움직이는 시간(3초)까지 포함
 
-export default function FlowStage({ step, sample, showFormula }) {
-  const beats = step.beats;
+// attack: 공격 장면을 재생할 때 { kind, run, script: { beats, actors }, result } (없으면 단계 흐름)
+export default function FlowStage({ step, sample, showFormula, attack, onExitAttack }) {
+  const beats = attack ? attack.script.beats : step.beats;
+  const actorsOf = (a) => ({ ...a, ...(attack?.script.actors?.[a.id] || {}) });
+  const result = attack?.result && !attack.result.info ? attack.result : null;
   const [cur, setCur] = useState(-1); // 지금 재생 중인 칸
   const [moved, setMoved] = useState(false); // 데이터 카드가 도착 쪽으로 출발했는지
   const [run, setRun] = useState(0);
 
   useEffect(() => {
     const timers = [];
-    let t = 400;
+    let t = START_MS;
     timers.push(setTimeout(() => { setCur(-1); setMoved(false); }, 0));
     beats.forEach((b, i) => {
       timers.push(setTimeout(() => { setCur(i); setMoved(false); }, t));
@@ -43,7 +44,7 @@ export default function FlowStage({ step, sample, showFormula }) {
     });
     timers.push(setTimeout(() => setCur(beats.length), t));
     return () => timers.forEach(clearTimeout);
-  }, [beats, run]);
+  }, [beats, run, attack?.run]);
 
   const beat = beats[cur];
   const sendBeat = beat?.send ? beat : null;
@@ -51,20 +52,24 @@ export default function FlowStage({ step, sample, showFormula }) {
   if (beat?.at) busy.add(beat.at);
   if (sendBeat) { busy.add(sendBeat.send[0]); busy.add(sendBeat.send[1]); }
   const finished = cur >= beats.length;
+  const blockBeat = beats.find((b) => b.block);
+  const stamped = attack && finished && result?.blocked && blockBeat;
+  const blockValue = () => (result ? (result.blocked ? `차단 — ${result.reason}` : `통과 — ${result.reason}`) : "블록체인 응답 기다리는 중…");
 
   // 휴대폰 화면: 지금 칸의 화면, 시작 전엔 첫 칸, 끝나면 마지막 칸 (단계에 칸이 없으면 결과 화면)
   const app = beats.length ? beats[Math.min(Math.max(cur, 0), beats.length - 1)].app : null;
 
   return (
-    <div className="hiw-stage">
-      <AppPhone app={app} />
+    <div className={`hiw-stage ${attack ? "attack" : ""}`}>
+      <AppPhone app={app} attack={!!attack} />
       <div className="hiw-stage-main">
       <div className="hiw-stage-row">
-        {ACTORS.map((a) => {
+        {ACTORS.map(actorsOf).map((a) => {
           const ops = beats.map((b, i) => ({ b, i })).filter(({ b }) => b.at === a.id);
           const involved = beats.some((b) => b.at === a.id || b.send?.includes(a.id));
           return (
-            <div key={a.id} className={`hiw-actor ${busy.has(a.id) ? "busy" : ""} ${involved ? "" : "idle"}`}>
+            <div key={a.id} className={`hiw-actor ${busy.has(a.id) ? "busy" : ""} ${involved ? "" : "idle"} ${a.bad ? "bad" : ""}`}>
+              {stamped && blockBeat.at === a.id && <div className="hiw-stamp">차단</div>}
               <div className="hiw-actor-head">
                 <div className="hiw-actor-title">{a.title}</div>
                 <div className="hiw-actor-role">{a.role}</div>
@@ -73,12 +78,13 @@ export default function FlowStage({ step, sample, showFormula }) {
                 {ops.length === 0 && <div className="hiw-op-empty">{involved ? "받기 · 보내기만" : "이번 단계에서는 하는 일 없음"}</div>}
                 {ops.map(({ b, i }) => {
                   const state = i < cur || finished ? "done" : i === cur ? "now" : "todo";
-                  const v = valueOf(b, sample);
+                  const v = b.block ? blockValue() : valueOf(b, sample);
+                  const tone = b.block ? (result ? (result.blocked ? "bad" : "") : "") : b.ok === false || b.bad ? "bad" : b.ok ? "good" : "";
                   return (
-                    <div key={i} className={`hiw-op ${state}`}>
+                    <div key={i} className={`hiw-op ${state} ${b.block && result?.blocked && state !== "todo" ? "blocked" : ""} ${b.bad ? "evil" : ""}`}>
                       <div className="hiw-op-text">{b.text}</div>
                       {showFormula && b.f && <div className="hiw-op-f">{b.f}</div>}
-                      {v && state !== "todo" && <div className={`hiw-op-val ${b.val ? "mono" : ""} ${b.ok === false ? "bad" : b.ok ? "good" : ""}`}>{v}</div>}
+                      {v && state !== "todo" && <div className={`hiw-op-val ${b.val ? "mono" : ""} ${tone}`}>{v}</div>}
                     </div>
                   );
                 })}
@@ -94,8 +100,8 @@ export default function FlowStage({ step, sample, showFormula }) {
         {ACTORS.map((a) => <div key={a.id} className={`hiw-stub ${busy.has(a.id) && sendBeat ? "on" : ""}`} style={{ left: `${a.x}%` }} />)}
         {beats.map((b, i) => b.send && i <= cur && (
           <div
-            key={`${run}-${i}`}
-            className={`hiw-packet-card ${i === cur ? "moving" : "arrived"}`}
+            key={`${run}-${attack?.run || 0}-${i}`}
+            className={`hiw-packet-card ${i === cur ? "moving" : "arrived"} ${b.bad ? "evil" : ""}`}
             style={{ left: `${i === cur && !moved ? X[b.send[0]] : X[b.send[1]]}%` }}
           >
             <div className="hiw-packet-dir">{i === cur ? (X[b.send[1]] > X[b.send[0]] ? "보내는 중 →" : "← 보내는 중") : "도착"}</div>
@@ -110,9 +116,12 @@ export default function FlowStage({ step, sample, showFormula }) {
         <div className="hiw-caption-text">
           {beat ? (
             <>
-              <span className="hiw-caption-who">{beat.send ? `${ACTORS.find((a) => a.id === beat.send[0]).title} → ${ACTORS.find((a) => a.id === beat.send[1]).title}` : ACTORS.find((a) => a.id === beat.at)?.title}</span>
+              <span className={`hiw-caption-who ${attack ? "evil" : ""}`}>{beat.send ? `${actorsOf(ACTORS.find((a) => a.id === beat.send[0])).title} → ${actorsOf(ACTORS.find((a) => a.id === beat.send[1])).title}` : actorsOf(ACTORS.find((a) => a.id === beat.at)).title}</span>
               {beat.note || beat.text}
+              {beat.block && result && <> 블록체인 응답: <strong className="hiw-raw">{result.reason}</strong></>}
             </>
+          ) : finished && attack ? (
+            result ? (result.blocked ? <><strong className="hiw-raw">공격 차단</strong> — {result.reason}</> : `예상과 달리 통과했습니다: ${result.reason}`) : "블록체인 응답 기다리는 중…"
           ) : finished ? (
             beats.length ? "이번 단계 끝. 아래 버튼으로 다시 보거나 다음 단계로 넘어가세요." : step.stageNote || ""
           ) : "시작합니다…"}
@@ -120,6 +129,7 @@ export default function FlowStage({ step, sample, showFormula }) {
         <div className="hiw-caption-ctrl">
           <span className="hiw-beat-no">{beats.length ? `${Math.min(cur + 1, beats.length)} / ${beats.length}` : ""}</span>
           {beats.length > 0 && <button className="hiw-btn ghost small" onClick={() => setRun((r) => r + 1)}>다시 재생</button>}
+          {attack && <button className="hiw-btn small" onClick={onExitAttack}>원래 흐름으로</button>}
         </div>
       </div>
       </div>

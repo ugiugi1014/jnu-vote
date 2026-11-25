@@ -9,7 +9,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { ethers } = require("ethers");
-const { newSecret, commitmentOf, castVote } = require("./demoVoter");
+const { seedSecret, commitmentOf, castVote } = require("./demoVoter");
 
 const API = process.env.SEED_API_URL || `http://localhost:${process.env.PORT || 8080}`;
 const accounts = JSON.parse(fs.readFileSync(process.env.DEMO_ACCOUNTS_FILE, "utf8"));
@@ -69,56 +69,70 @@ async function main() {
     return data;
   };
 
-  const [rows] = await db.query(`SELECT title FROM elections`);
-  const existing = new Set(rows.map((r) => r.title));
+  const [rows] = await db.query(`SELECT id, title, status, contract_address FROM elections`);
+  const existing = new Map(rows.map((r) => [r.title, r]));
   const studentIds = [...accounts.students, ...seedVoters].map((s) => s.student_id);
   const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 
+  // 선거가 이미 있어도(이전 버전으로 시작한 경우 등) 빠진 미리 투표·개표를 채운다.
+  // 미리 투표한 학생의 투표권은 (이메일, 선거 주소)로 매번 같게 만들어서, 다시 실행해도 이어서 할 수 있다.
   for (const e of accounts.elections) {
-    if (existing.has(e.title)) {
-      console.log(`[seed] 이미 있음: ${e.title}`);
-      continue;
+    let el = existing.get(e.title);
+    if (!el) {
+      const now = Date.now();
+      const created = await api("POST", "/elections", {
+        title: e.title,
+        description: e.description,
+        start_time: fmt(new Date(now - 60_000)),
+        end_time: fmt(new Date(now + 7 * 24 * 3600_000)), // 심사 중 자동 종료되지 않게 넉넉히
+      });
+      const id = created.election_id;
+      await api("PUT", `/elections/${id}/candidates/bulk`, {
+        candidates: e.candidates.map((c, i) => ({ ...c, candidate_index: i })),
+      });
+      const dep = await api("POST", `/elections/${id}/deploy`);
+      await api("POST", `/elections/${id}/voters/bulk`, { student_ids: studentIds });
+      if (e.start) await api("POST", `/elections/${id}/start`);
+      el = { id, title: e.title, status: e.start ? "active" : "pending", contract_address: dep.contract_address };
+      console.log(`[seed] ${e.title} → #${id} ${dep.contract_address} ${e.start ? "(진행 중)" : "(예정)"}`);
+    } else {
+      console.log(`[seed] 이미 있음: ${e.title} (${el.status})`);
+      // 이전 버전 명단에는 미리 투표할 학생이 없을 수 있다 (이미 있는 학번은 서버가 건너뜀)
+      if (el.status === "pending" || el.status === "active") {
+        await api("POST", `/elections/${el.id}/voters/bulk`, { student_ids: studentIds }).catch(() => {});
+      }
     }
-    const now = Date.now();
-    const created = await api("POST", "/elections", {
-      title: e.title,
-      description: e.description,
-      start_time: fmt(new Date(now - 60_000)),
-      end_time: fmt(new Date(now + 7 * 24 * 3600_000)), // 심사 중 자동 종료되지 않게 넉넉히
-    });
-    const id = created.election_id;
-    await api("PUT", `/elections/${id}/candidates/bulk`, {
-      candidates: e.candidates.map((c, i) => ({ ...c, candidate_index: i })),
-    });
-    const dep = await api("POST", `/elections/${id}/deploy`);
-    await api("POST", `/elections/${id}/voters/bulk`, { student_ids: studentIds });
-    if (e.start) await api("POST", `/elections/${id}/start`);
-    console.log(`[seed] ${e.title} → #${id} ${dep.contract_address} ${e.start ? "(진행 중)" : "(예정)"}`);
 
     // 3) 미리 투표: 등록을 먼저 모두 끝내고(명단 root 고정) 투표한다
     const votes = e.seed_votes || [];
-    if (votes.length) {
-      const election = { id, contract_address: dep.contract_address };
+    if (votes.length && el.status === "active") {
+      const election = { id: el.id, contract_address: el.contract_address };
       const secrets = [];
       for (let i = 0; i < votes.length; i++) {
         const v = seedVoters[i];
-        const secret = await newSecret(dep.contract_address);
-        await api("POST", `/elections/${id}/register-commitment`, { commitment: (await commitmentOf(secret)).toString() }, sign(v.email, "user"));
+        const secret = await seedSecret(`${v.email}|${process.env.JWT_SECRET}`, el.contract_address);
+        const r = await fetch(`${API}/elections/${el.id}/register-commitment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sign(v.email, "user")}` },
+          body: JSON.stringify({ commitment: (await commitmentOf(secret)).toString() }),
+        });
+        if (!r.ok && r.status !== 409) throw new Error(`투표권 등록 실패 (${v.label}): ${r.status}`);
         secrets.push(secret);
       }
       for (let i = 0; i < votes.length; i++) {
         const t0 = Date.now();
         const r = await castVote({ api: API, provider, election, secret: secrets[i], candidateId: votes[i] });
-        if (r.status !== 200) throw new Error(`미리 투표 실패 (${seedVoters[i].label}): ${JSON.stringify(r.data)}`);
-        console.log(`[seed]   ${seedVoters[i].label} 투표 완료 (${((Date.now() - t0) / 1000).toFixed(1)}초)`);
+        const already = JSON.stringify(r.data).match(/already|duplicate/i);
+        if (r.status !== 200 && !already) throw new Error(`미리 투표 실패 (${seedVoters[i].label}): ${JSON.stringify(r.data)}`);
+        console.log(`[seed]   ${seedVoters[i].label} ${already ? "이미 투표함" : `투표 완료 (${((Date.now() - t0) / 1000).toFixed(1)}초)`}`);
       }
     }
 
     // 4) 종료·개표
-    if (e.tally) {
-      await api("POST", `/elections/${id}/close`);
+    if (e.tally && el.status !== "tallied") {
+      if (el.status === "active") await api("POST", `/elections/${el.id}/close`);
       const t0 = Date.now();
-      await api("POST", `/elections/${id}/tally`);
+      await api("POST", `/elections/${el.id}/tally`);
       console.log(`[seed]   종료·개표 완료 (${((Date.now() - t0) / 1000).toFixed(1)}초)`);
     }
   }

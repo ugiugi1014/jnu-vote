@@ -56,7 +56,7 @@ function getProvider() {
     if (!process.env.RPC_URL) {
       throw new Error("RPC_URL 환경변수가 필요합니다.");
     }
-    cachedProvider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+    cachedProvider = new ethers.JsonRpcProvider(process.env.RPC_URL, undefined, { cacheTimeout: -1 }) /* 캐시를 끄지 않으면 관리자 지갑 nonce 가 겹칠 수 있음 */;
   }
   return cachedProvider;
 }
