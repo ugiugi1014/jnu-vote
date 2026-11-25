@@ -1,5 +1,5 @@
 // 데모 환경 처음부터 끝까지 자동 점검 (브라우저 대신 프론트 코드를 Node 에서 그대로 사용)
-//   학생 로그인 → 지갑 등록 → 투표 키(복구 코드) 등록 → 투표 증명 → relay 제출
+//   학생 로그인 → 지갑 등록 → 투표권(복구 코드) 등록 → 투표 증명 → relay 제출
 //   + 이중투표 거절, 명단 밖 학생 거절, (선택) 관리자 종료·개표·결과 확인
 // 사용: node scripts/demo-e2e.mjs [--tally]
 //   API (기본 http://localhost:8080/api), RPC (기본 http://localhost:8545), ACCOUNTS (기본 ../../demo/accounts.json)
@@ -92,7 +92,7 @@ for (let i = 0; i < accounts.students.length; i++) {
   const secret = await deriveSecret(seed, active.contract_address);
   secrets.push(secret);
   const reg = await call('POST', `/elections/${active.id}/register-commitment`, { token, body: { commitment: (await computeCommitment(secret)).toString() } });
-  ok(reg.status === 200, `${st.label}: 투표 키 등록`);
+  ok(reg.status === 200, `${st.label}: 투표권 등록`);
   const t0 = Date.now();
   const r = await vote(active, secret, choices[i]);
   ok(r.status === 200, `${st.label}: 후보 ${choices[i]} 투표 (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
@@ -113,7 +113,7 @@ ok(dup.status === 400 && String(dup.data.reason || '').includes('duplicate nulli
   ok(e2.can_replace === true, '시작 전이라 교체 가능');
   const s2 = await deriveSecret(bytesToField(newRecoveryBytes()), pending.contract_address);
   const rep = await call('POST', `/elections/${pending.id}/register-commitment`, { token, body: { commitment: (await computeCommitment(s2)).toString(), replace: true } });
-  ok(rep.status === 200, `새 투표 키로 교체 ${rep.status === 200 ? '' : JSON.stringify(rep.data)}`);
+  ok(rep.status === 200, `새 투표권로 교체 ${rep.status === 200 ? '' : JSON.stringify(rep.data)}`);
   const onChain = (await new ethers.Contract(pending.contract_address, abi, provider).getCommitments()).map(String);
   ok(onChain.includes(String(await computeCommitment(s2))) && !onChain.includes(String(await computeCommitment(s1))), '체인 명단에 새 키만 남음');
 }

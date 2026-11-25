@@ -665,7 +665,7 @@ function VoterSection({ token }) {
         body: JSON.stringify({ student_ids: lines }),
       });
       setVoterUploadMsg(
-        `등록 완료 — 총 ${result.total}명 (학생은 투표 화면에서 투표 키를 직접 등록합니다)`
+        `등록 완료 — 총 ${result.total}명 (학생은 투표 화면에서 투표권을 직접 등록합니다)`
       );
       setVoterInput("");
       await loadVoters(selectedElectionId);
@@ -690,7 +690,7 @@ function VoterSection({ token }) {
     <>
       <div className="admin-page-header">
         <h2>유권자 관리</h2>
-        <p>재학증명서 인증 요청을 승인/거절하고 선거별 명단과 투표 키 등록 여부를 확인합니다.</p>
+        <p>재학증명서 인증 요청을 승인/거절하고 선거별 명단과 투표권 등록 여부를 확인합니다.</p>
       </div>
 
       <div className="inner-tab-bar">
@@ -777,7 +777,7 @@ function VoterSection({ token }) {
               <th>학번</th>
               <th>인증</th>
               <th>지갑</th>
-              <th>투표 키 등록</th>
+              <th>투표권 등록</th>
             </tr>
           </thead>
           <tbody>

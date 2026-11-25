@@ -1,5 +1,5 @@
 // 체인 검증 보기: 서버를 거치지 않고 체인(VotingSystem)에서 직접 읽어 보여준다.
-//  - 등록된 투표 키 수, 들어온 표(암호문), 사용된 nullifier
+//  - 등록된 투표권 수, 들어온 표(암호문), 사용된 nullifier
 //  - 개표 배치 기록과 최종 득표 (개표 증명이 컨트랙트에서 검증돼야 기록된다)
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
@@ -104,8 +104,8 @@ export default function ChainVerifyPanel({ onClose }) {
         {data && (
           <div className="demo-verify-grid">
             <section>
-              <h4>1. 유권자 명단 (투표 키)</h4>
-              <p>등록된 투표 키 <b>{data.commitments}</b>개. 키에는 학번이 들어 있지 않아, 체인만 봐서는 누구 키인지 알 수 없습니다.</p>
+              <h4>1. 유권자 명단 (투표권)</h4>
+              <p>등록된 투표권 <b>{data.commitments}</b>개. 투표권에는 학번이 들어 있지 않아, 체인만 봐서는 누구 것인지 알 수 없습니다.</p>
             </section>
             <section>
               <h4>2. 들어온 표</h4>

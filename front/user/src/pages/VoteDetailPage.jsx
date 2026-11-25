@@ -58,7 +58,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
   const [passkeyOk, setPasskeyOk] = useState(false);
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState("");
-  const [replaceMode, setReplaceMode] = useState(false);       // 투표 키 교체(시작 전 재등록)
+  const [replaceMode, setReplaceMode] = useState(false);       // 투표권 교체(시작 전 재등록)
   const [recovery, setRecovery] = useState(null);              // { bytes, code } 새 복구 코드 표시용
   const [recoverySaved, setRecoverySaved] = useState(false);
   const [restoreInput, setRestoreInput] = useState("");
@@ -76,9 +76,9 @@ export default function VoteDetailPage({ vote, onBack, token }) {
       .catch(() => alert("후보자 목록 로딩 실패"));
   }, [vote.id]);
 
-  // 자격 확인 + 익명 투표 키 준비
+  // 자격 확인 + 익명 투표권 준비
   //  - 미등록 + 캐시된 시드 있음: 같은 시드로 이 선거의 secret 을 만들어 바로 등록 (다른 선거와 같은 패스키/복구 코드 사용)
-  //  - 미등록 + 시드 없음: 패스키(권장) 또는 복구 코드로 투표 키를 만들게 한다 (버튼 클릭 필요: 패스키는 사용자 동작이 있어야 뜬다)
+  //  - 미등록 + 시드 없음: 패스키(권장) 또는 복구 코드로 투표권을 만들게 한다 (버튼 클릭 필요: 패스키는 사용자 동작이 있어야 뜬다)
   //  - 등록됨 + 이 브라우저에 키 없음: 패스키/복구 코드로 복원. 시작 전이면 새 키로 교체도 가능
   useEffect(() => {
     if (!token) return;
@@ -166,7 +166,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
     }
   };
 
-  // 새 투표 키: 패스키
+  // 새 투표권: 패스키
   const setupWithPasskey = () => runKeyAction(async () => {
     const out = await createPasskeySeed("제주대 전자투표 유권자");
     const seed = bytesToField(out);
@@ -174,7 +174,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
     await finishSetup(seed, "passkey");
   });
 
-  // 새 투표 키: 복구 코드 (먼저 보여주고, 저장했다고 확인한 뒤 등록)
+  // 새 투표권: 복구 코드 (먼저 보여주고, 저장했다고 확인한 뒤 등록)
   const startRecoverySetup = () => runKeyAction(async () => {
     const bytes = newRecoveryBytes();
     setRecovery({ bytes, code: await encodeRecoveryCode(bytes) });
@@ -185,7 +185,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
   });
   const downloadRecovery = () => {
     const blob = new Blob(
-      [`제주대학교 전자투표 복구 코드\n\n${recovery.code}\n\n이 코드가 있으면 다른 기기에서도 투표 키를 되찾을 수 있습니다.\n다른 사람에게 보여주지 마세요.\n`],
+      [`제주대학교 전자투표 복구 코드\n\n${recovery.code}\n\n이 코드가 있으면 다른 기기에서도 투표권을 되찾을 수 있습니다.\n다른 사람에게 보여주지 마세요.\n`],
       { type: "text/plain;charset=utf-8" }
     );
     const a = document.createElement("a");
@@ -202,8 +202,8 @@ export default function VoteDetailPage({ vote, onBack, token }) {
     const onChain = await readChainCommitments(electionInfo.address);
     if (!onChain.includes(mine)) {
       throw new Error(source === "passkey"
-        ? "이 패스키로 등록한 투표 키가 아닙니다. 처음 등록할 때 쓴 패스키를 골라주세요."
-        : "이 복구 코드로 등록한 투표 키가 아닙니다.");
+        ? "이 패스키로 등록한 투표권이 아닙니다. 처음 등록할 때 쓴 패스키를 골라주세요."
+        : "이 복구 코드로 등록한 투표권이 아닙니다.");
     }
     saveSeed(seed, source);
     setIdStatus("ready");
@@ -243,7 +243,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
       const electionAddress = vote.contract_address;
 
       const secret = await resolveSecret(electionAddress);
-      if (!secret) throw new Error("이 브라우저에 이 선거의 투표 키가 없습니다.");
+      if (!secret) throw new Error("이 브라우저에 이 선거의 투표권이 없습니다.");
 
       // 1) 선거 정보·유권자 트리는 체인(VotingSystem)에서 직접 읽는다 (서버 신뢰 불필요)
       setStage("선거 정보 확인 중...");
@@ -333,21 +333,21 @@ export default function VoteDetailPage({ vote, onBack, token }) {
 
         {electionInfo.status === "pending" && (
           <div className="warning-banner">
-            아직 투표 시작 전입니다. 지금 투표 키를 등록해 두면 시작 후 바로 투표할 수 있습니다.
+            아직 투표 시작 전입니다. 지금 투표권을 등록해 두면 시작 후 바로 투표할 수 있습니다.
           </div>
         )}
         {idStatus === "registering" && (
-          <div className="warning-banner">익명 투표 키를 등록하고 있습니다...</div>
+          <div className="warning-banner">익명 투표권을 등록하고 있습니다...</div>
         )}
         {idStatus === "ready" && electionInfo.status === "pending" && (
-          <div className="warning-banner">투표 키 등록이 끝났습니다. 투표가 시작되면 다시 들어와 주세요.</div>
+          <div className="warning-banner">투표권 등록이 끝났습니다. 투표가 시작되면 다시 들어와 주세요.</div>
         )}
 
         {idStatus === "setup" && !recovery && (
           <div className="key-panel">
-            <div className="section-title">{replaceMode ? "새 투표 키 만들기" : "투표 키 만들기"}</div>
+            <div className="section-title">{replaceMode ? "새 투표권 만들기" : "투표권 만들기"}</div>
             <p className="key-panel-desc">
-              익명 투표를 위해 나만 아는 투표 키를 만듭니다. 서버는 이 키를 모르며, 잃어버리면 이 선거에 투표할 수 없습니다.
+              익명 투표를 위해 나만 아는 투표권을 만듭니다. 서버는 이 투표권을 모르며, 잃어버리면 이 선거에 투표할 수 없습니다.
             </p>
             {passkeyOk && (
               <button className="btn btn-vote key-btn" disabled={keyBusy} onClick={setupWithPasskey}>
@@ -364,7 +364,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
           <div className="key-panel">
             <div className="section-title">복구 코드를 저장하세요</div>
             <p className="key-panel-desc">
-              다른 기기에서 투표하거나 브라우저 기록을 지운 뒤에는 이 코드가 있어야 투표 키를 되찾을 수 있습니다.
+              다른 기기에서 투표하거나 브라우저 기록을 지운 뒤에는 이 코드가 있어야 투표권을 되찾을 수 있습니다.
               다른 사람에게 보여주지 마세요.
             </p>
             <div className="recovery-code">{recovery.code}</div>
@@ -386,7 +386,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
           <div className="key-panel">
             <div className="warning-banner">
               <Icon.Warn />
-              이 브라우저에 이 선거의 투표 키가 없습니다. 등록할 때 쓴 패스키나 복구 코드로 되찾아주세요.
+              이 브라우저에 이 선거의 투표권이 없습니다. 등록할 때 쓴 패스키나 복구 코드로 되찾아주세요.
             </div>
             {passkeyOk && (
               <button className="btn btn-vote key-btn" disabled={keyBusy} onClick={restoreWithPasskey}>패스키로 되찾기</button>
@@ -405,9 +405,9 @@ export default function VoteDetailPage({ vote, onBack, token }) {
             {electionInfo.canReplace && (
               <>
                 <p className="key-panel-desc">
-                  패스키와 복구 코드를 모두 잃었다면, 투표 시작 전까지는 새 투표 키로 다시 등록할 수 있습니다 (기존 키는 무효가 됩니다).
+                  패스키와 복구 코드를 모두 잃었다면, 투표 시작 전까지는 새 투표권으로 다시 등록할 수 있습니다 (기존 투표권은 무효가 됩니다).
                 </p>
-                <button className="btn btn-cancel key-btn" disabled={keyBusy} onClick={beginReplace}>새 투표 키로 다시 등록</button>
+                <button className="btn btn-cancel key-btn" disabled={keyBusy} onClick={beginReplace}>새 투표권으로 다시 등록</button>
               </>
             )}
           </div>

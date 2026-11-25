@@ -82,13 +82,13 @@ export default function TryIt({ kind, lab, setLab }) {
     return (
       <div className="hiw-try">
         <button className="hiw-btn" disabled={!!busy} onClick={() => run("key", async () => setLab({ ...(await ensureKey({})) }))}>
-          {busy ? "만드는 중…" : lab.secret ? "새 투표 키 다시 만들기" : "내 투표 키 만들어 보기"}
+          {busy ? "만드는 중…" : lab.secret ? "새 투표권 다시 만들기" : "내 투표권 만들어 보기"}
         </button>
         {lab.secret && (
           <>
-            <Row k="secret" v={lab.secret} note="이 브라우저에만 있음" />
-            <Row k="commitment" v={lab.commitment} note="이것만 서버로 감" />
-            <p className="hiw-hint">commitment 에서 secret 을 거꾸로 알아낼 수 없습니다. 같은 secret 이면 언제나 같은 commitment 가 나옵니다.</p>
+            <Row k="투표권" v={lab.secret} note="이 브라우저에만 있음" />
+            <Row k="암호화된 투표권" v={lab.commitment} note="이것만 서버로 감" />
+            <p className="hiw-hint">암호화된 값에서 투표권을 거꾸로 알아낼 수 없습니다. 같은 투표권이면 언제나 같은 값이 나옵니다.</p>
           </>
         )}
         {error && <div className="hiw-err">{error}</div>}
@@ -105,14 +105,14 @@ export default function TryIt({ kind, lab, setLab }) {
           ))}
         </div>
         <button className="hiw-btn" disabled={!!busy} onClick={() => run("enc", async () => setLab(await ensureEncrypted(lab, candidate)))}>
-          {busy ? "암호화 중…" : `${CANDIDATES[candidate]} 암호화해 보기`}
+          {busy ? "잠그는 중…" : `${CANDIDATES[candidate]} 골라서 잠가 보기`}
         </button>
         {lab.ciphertext !== undefined && (
           <>
-            <Row k="암호문" v={lab.ciphertext} note="체인에 올라가는 값" />
-            <Row k="임시 공개키 x" v={lab.ephPubX} />
-            <Row k="코디 개인키로 열면" v={`기호 ${lab.opened}`} note="개표 때 관리자만 가능" />
-            <p className="hiw-hint">같은 후보를 다시 암호화해도 임시 키가 매번 달라서 암호문이 바뀝니다. 암호문만 봐서는 같은 후보인지도 알 수 없습니다.</p>
+            <Row k="잠긴 투표 내용" v={lab.ciphertext} note="블록체인에 올라가는 값" />
+            <Row k="일회용 열쇠" v={lab.ephPubX} />
+            <Row k="관리자 개인키로 열면" v={`기호 ${lab.opened}`} note="개표 때 관리자만 가능" />
+            <p className="hiw-hint">같은 후보를 다시 잠가도 일회용 열쇠가 매번 달라서 잠긴 값이 바뀝니다. 잠긴 값만 봐서는 같은 후보인지도 알 수 없습니다.</p>
           </>
         )}
         {error && <div className="hiw-err">{error}</div>}
@@ -149,21 +149,21 @@ export default function TryIt({ kind, lab, setLab }) {
     return (
       <div className="hiw-try">
         <button className="hiw-btn" disabled={!!busy} onClick={prove}>
-          {busy === "prove" ? "증명 만드는 중… (몇 초)" : "이 브라우저에서 투표 증명 만들기"}
+          {busy === "prove" ? "증명 만드는 중… (몇 초)" : "이 브라우저에서 유효한 투표 증명 만들기"}
         </button>
         {lab.proof && (
           <>
             <Row k="걸린 시간" v={`${(lab.ms / 1000).toFixed(1)}초`} />
-            <Row k="nullifier" v={lab.publicSignals[0]} />
-            <Row k="명단 root" v={lab.publicSignals[1]} />
-            <Row k="암호문" v={lab.publicSignals[6]} />
+            <Row k="중복투표방지 값" v={lab.publicSignals[0]} />
+            <Row k="명단 요약값" v={lab.publicSignals[1]} />
+            <Row k="잠긴 투표 내용" v={lab.publicSignals[6]} />
             <div className={`hiw-verdict ${lab.valid ? "ok" : "bad"}`}>
-              검증 결과: {lab.valid ? "통과" : "실패"} — 비밀값 없이 공개 값과 증명만으로 확인
+              확인 결과: {lab.valid ? "통과" : "실패"} — 투표권 없이 공개 값과 증명만으로 확인
             </div>
-            <button className="hiw-btn ghost" disabled={!!busy} onClick={tamper}>암호문을 1만 바꿔서 다시 검증</button>
+            <button className="hiw-btn ghost" disabled={!!busy} onClick={tamper}>잠긴 투표 내용을 1만 바꿔서 다시 확인</button>
             {lab.tampered !== undefined && (
               <div className={`hiw-verdict ${lab.tampered ? "ok" : "bad"}`}>
-                바꾼 값으로 검증: {lab.tampered ? "통과" : "실패"} — 증명은 원래 값에만 맞습니다
+                바꾼 값으로 확인: {lab.tampered ? "통과" : "실패"} — 증명은 원래 값에만 맞습니다
               </div>
             )}
           </>

@@ -22,10 +22,11 @@ const valueOf = (beat, sample) => {
   return beat.val.map((k) => short(sample[k])).join(", ");
 };
 
-const OP_MS = 1700;
-const SEND_MS = 2600;
+// 칸 하나가 머무는 시간: 자막을 끝까지 읽을 수 있게 넉넉히
+const OP_MS = 3500;
+const SEND_MS = 4500; // 데이터 카드가 움직이는 시간(3초)까지 포함
 
-export default function FlowStage({ step, sample }) {
+export default function FlowStage({ step, sample, showFormula }) {
   const beats = step.beats;
   const [cur, setCur] = useState(-1); // 지금 재생 중인 칸
   const [moved, setMoved] = useState(false); // 데이터 카드가 도착 쪽으로 출발했는지
@@ -37,7 +38,7 @@ export default function FlowStage({ step, sample }) {
     timers.push(setTimeout(() => { setCur(-1); setMoved(false); }, 0));
     beats.forEach((b, i) => {
       timers.push(setTimeout(() => { setCur(i); setMoved(false); }, t));
-      if (b.send) timers.push(setTimeout(() => setMoved(true), t + 120));
+      if (b.send) timers.push(setTimeout(() => setMoved(true), t + 300));
       t += b.send ? SEND_MS : OP_MS;
     });
     timers.push(setTimeout(() => setCur(beats.length), t));
@@ -76,6 +77,7 @@ export default function FlowStage({ step, sample }) {
                   return (
                     <div key={i} className={`hiw-op ${state}`}>
                       <div className="hiw-op-text">{b.text}</div>
+                      {showFormula && b.f && <div className="hiw-op-f">{b.f}</div>}
                       {v && state !== "todo" && <div className={`hiw-op-val ${b.val ? "mono" : ""} ${b.ok === false ? "bad" : b.ok ? "good" : ""}`}>{v}</div>}
                     </div>
                   );
@@ -98,6 +100,7 @@ export default function FlowStage({ step, sample }) {
           >
             <div className="hiw-packet-dir">{i === cur ? (X[b.send[1]] > X[b.send[0]] ? "보내는 중 →" : "← 보내는 중") : "도착"}</div>
             <div className="hiw-packet-title">{b.text}</div>
+            {showFormula && b.f && <div className="hiw-packet-f">{b.f}</div>}
             {valueOf(b, sample) && <div className={`hiw-packet-val ${b.val ? "mono" : ""}`}>{valueOf(b, sample)}</div>}
           </div>
         )).filter(Boolean).slice(-1)}

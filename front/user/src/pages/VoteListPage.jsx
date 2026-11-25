@@ -133,7 +133,7 @@ export default function VoteListPage({ studentId, onLogout, onVote, onResult, us
                 {vote.status === "pending" && vote.contract_address && isApproved && (
                   <div className="vote-action-stack">
                     <button className="vote-button vote-button-outline" onClick={() => handleVoteClick(vote)}>
-                      투표 키 미리 등록
+                      투표권 미리 등록
                     </button>
                     <span style={{ fontSize: 11, color: "#aaa" }}>일찍 등록할수록 익명성이 높아집니다</span>
                   </div>

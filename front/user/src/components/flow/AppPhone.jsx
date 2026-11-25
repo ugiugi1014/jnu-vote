@@ -10,11 +10,15 @@ const RESULT = [3, 3, 2];
 
 const Tap = ({ on }) => (on ? <span className="ap-tap" /> : null);
 
-function Header({ back }) {
+function Header({ back, unverified }) {
   return back ? (
     <div className="ap-head small"><span className="ap-back">← 목록으로</span><img src="/jejun.png" alt="" className="ap-logo-s" /></div>
   ) : (
-    <div className="ap-head"><img src="/jejun.png" alt="" className="ap-logo" /><div><div className="ap-brand">제주대학교 전자투표</div><div className="ap-brand-sub">Jeju National University E-Voting</div></div></div>
+    <div className="ap-head">
+      <img src="/jejun.png" alt="" className="ap-logo" />
+      <div><div className="ap-brand">제주대학교 전자투표</div><div className="ap-brand-sub">Jeju National University E-Voting</div></div>
+      <span className={`ap-verified ${unverified ? "no" : ""}`}>{unverified ? "인증 필요" : "● 인증완료"}</span>
+    </div>
   );
 }
 
@@ -64,10 +68,30 @@ function Screen({ a }) {
           {a.busy && <div className="ap-busy"><span className="ap-spin" />{a.busy}</div>}
         </div>
       );
+    case "upload":
+      return (
+        <>
+          <Header unverified />
+          <div className="ap-body">
+            <div className="ap-h1">재학 인증</div>
+            <div className="ap-muted">처음 한 번만 하면 됩니다.</div>
+            <div className="ap-card ap-drop">
+              <div className="ap-file">재학증명서.jpg</div>
+              <div className="ap-btn ghost">사진 올리기<Tap on={a.tap === "upload"} /></div>
+            </div>
+            <div className="ap-field">학번</div>
+            <div className={`ap-input ${a.filled ? "filled" : ""}`}>{a.filled ? "20260001" : "자동으로 채워집니다"}</div>
+            <div className="ap-field">재학증명서 문서번호</div>
+            <div className={`ap-input ${a.filled ? "filled" : ""}`}>{a.filled ? "1234-5678-9012-3456" : "자동으로 채워집니다"}</div>
+            <div className="ap-btn">인증 신청<Tap on={a.tap === "request"} /></div>
+            {a.busy && <div className="ap-busy"><span className="ap-spin" />{a.busy}</div>}
+          </div>
+        </>
+      );
     case "list":
       return (
         <>
-          <Header />
+          <Header unverified={a.unverified} />
           <div className="ap-body">
             <div className="ap-h1">투표 목록</div>
             <div className="ap-tabs"><span className="on">진행중</span><span>예정</span><span>종료</span></div>
@@ -75,7 +99,7 @@ function Screen({ a }) {
               <span className="ap-badge">진행중</span>
               <div className="ap-el-title">{ELECTION}</div>
               <div className="ap-muted">투표자 3</div>
-              <div className="ap-btn sm right">투표하기<Tap on={a.tap === "vote"} /></div>
+              <div className={`ap-btn sm right ${a.unverified ? "disabled" : ""}`}>투표하기<Tap on={a.tap === "vote"} /></div>
             </div>
           </div>
         </>
@@ -87,8 +111,8 @@ function Screen({ a }) {
           <div className="ap-body">
             <ElectionCard />
             <div className="ap-card">
-              <div className="ap-sec2">투표 키 만들기</div>
-              <div className="ap-muted">나만 아는 투표 키를 만듭니다. 서버는 이 키를 모릅니다.</div>
+              <div className="ap-sec2">투표권 만들기</div>
+              <div className="ap-muted">나만 아는 투표권을 만듭니다. 서버는 이 투표권을 모릅니다.</div>
               <div className="ap-btn">패스키로 만들기<Tap on={a.tap === "passkey"} /></div>
               <div className="ap-btn ghost">복구 코드로 만들기</div>
             </div>
@@ -101,7 +125,7 @@ function Screen({ a }) {
         <>
           <Header back />
           <div className="ap-body">
-            <div className="ap-ok">✓ 투표 키 준비됨 · 명단 등록 완료</div>
+            <div className="ap-ok">✓ 투표권 준비됨 · 명단 등록 완료</div>
             <Candidates sel={a.sel} tap={a.tap} />
           </div>
           <div className="ap-bottom"><div className="ap-btn ghost">취소</div><div className={`ap-btn ${a.sel === undefined ? "disabled" : ""}`}>투표하기</div></div>

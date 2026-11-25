@@ -14,18 +14,18 @@ const TALLY_VERIFIER_ABI = [
 const ATTACKS = {
   double: {
     title: "같은 학생이 한 번 더 투표",
-    what: "이미 체인에 기록된 nullifier 로 투표를 한 번 더 보냅니다.",
-    expect: "컨트랙트가 'duplicate nullifier' 로 거절합니다. 같은 학생은 같은 secret 을 쓰므로 nullifier 가 같아질 수밖에 없습니다.",
+    what: "이미 블록체인에 기록된 중복투표방지 값으로 투표를 한 번 더 보냅니다.",
+    expect: "블록체인이 'duplicate nullifier'(이미 쓰인 중복투표방지 값)로 거절합니다. 같은 학생은 같은 투표권을 쓰므로 이 값이 같아질 수밖에 없습니다.",
   },
   outsider: {
     title: "명단에 없는 사람이 투표",
-    what: "체인의 유권자 명단에 없는 명단 root 로 투표를 보냅니다.",
-    expect: "컨트랙트가 'unknown merkle root' 로 거절합니다. 명단 밖 사람은 체인이 아는 root 에 대한 증명을 만들 수 없습니다.",
+    what: "블록체인의 유권자 명단에 없는 명단 요약값으로 투표를 보냅니다.",
+    expect: "블록체인이 'unknown merkle root'(모르는 명단)로 거절합니다. 명단 밖 사람은 블록체인이 아는 명단으로 증명을 만들 수 없습니다.",
   },
   tally: {
     title: "관리자가 득표를 바꿔서 기록",
-    what: "체인에 실제로 기록된 개표 증명을 꺼내, 득표 하나만 1 바꿔서 개표 검증 컨트랙트에 넣어 봅니다.",
-    expect: "원래 값은 통과하고, 바꾼 값은 실패합니다. 개표 기록(recordTallyBatch)은 이 검증을 반드시 통과해야 합니다.",
+    what: "블록체인에 실제로 기록된 개표 증명을 꺼내, 득표 하나만 1 바꿔서 다시 확인해 봅니다.",
+    expect: "원래 값은 통과하고, 바꾼 값은 실패합니다. 개표 결과는 이 확인을 통과해야만 기록됩니다.",
   },
 };
 
@@ -64,8 +64,8 @@ async function runAttack(kind) {
         ok: true,
         lines: [
           `선거: ${e.title}`,
-          `보낸 nullifier: ${String(nullifier).slice(0, 14)}…`,
-          `컨트랙트 응답: 거절 — "${reasonOf(err)}"`,
+          `보낸 중복투표방지 값: ${String(nullifier).slice(0, 14)}…`,
+          `블록체인 응답: 거절 — "${reasonOf(err)}"`,
         ],
       };
     }
@@ -93,8 +93,8 @@ async function runAttack(kind) {
       ok: original && !changed,
       lines: [
         `선거: ${e.title} (배치 ${last.args.batchIndex})`,
-        `체인에 기록된 그대로 검증: ${original ? "통과" : "실패"}`,
-        `첫 번째 후보 득표 ${signals[155]} → ${forged[155]} 로 바꿔 검증: ${changed ? "통과" : "실패"}`,
+        `기록된 그대로 확인: ${original ? "통과" : "실패"}`,
+        `첫 번째 후보 득표 ${signals[155]} → ${forged[155]} 로 바꿔 확인: ${changed ? "통과" : "실패"}`,
       ],
     };
   }
@@ -134,13 +134,13 @@ export default function AttackPanel({ kinds }) {
             <p className="hiw-hint">{a.what}</p>
             {r && r.live === false && (
               <div className="hiw-verdict info">
-                데모 체인이 꺼져 있어 설명으로 대신합니다. {a.expect} 데모를 켜면 실제 컨트랙트 응답을 볼 수 있습니다.
+                데모가 꺼져 있어 설명으로 대신합니다. {a.expect} 데모를 켜면 실제 블록체인 응답을 볼 수 있습니다.
               </div>
             )}
             {r?.info && <div className="hiw-verdict info">{r.info}</div>}
             {r?.lines && (
               <div className={`hiw-verdict ${r.ok ? "ok" : "bad"}`}>
-                <div className="hiw-live">실제 체인 응답</div>
+                <div className="hiw-live">실제 블록체인 응답</div>
                 {r.lines.map((l, i) => <div key={i}>{l}</div>)}
               </div>
             )}
