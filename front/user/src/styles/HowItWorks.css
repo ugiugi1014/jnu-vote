@@ -6,21 +6,51 @@
 .hiw-back { background: none; border: none; font: inherit; font-size: 14px; color: #444; cursor: pointer; padding: 4px 0; }
 .hiw-back:hover { color: #111; }
 
-.hiw-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 18px; padding: 12px 28px; align-items: start; }
+.hiw-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; padding: 12px 28px; align-items: start; }
 .hiw-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
-/* 플로우차트 */
-.hiw-flow { height: 320px; background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; }
-.hiw-flow .react-flow__handle { opacity: 0; pointer-events: none; }
-.hiw-node { width: 190px; padding: 14px 16px; background: #fff; border: 2px solid #d6dae0; border-radius: 12px; opacity: 0.38; transition: opacity 0.3s, border-color 0.3s, box-shadow 0.3s; }
-.hiw-node.active { opacity: 1; border-color: #1a5fa8; box-shadow: 0 4px 16px rgba(26, 95, 168, 0.18); }
-.hiw-node-title { font-size: 15px; font-weight: 700; }
-.hiw-node-sub { font-size: 12px; color: #6b7280; margin-top: 4px; }
-.hiw-edge { stroke: #cfd4db !important; stroke-width: 2 !important; }
-.hiw-edge.active { stroke: #1a5fa8 !important; stroke-width: 2.5 !important; stroke-dasharray: 6 5; animation: hiw-dash 0.9s linear infinite; }
-@keyframes hiw-dash { to { stroke-dashoffset: -22; } }
-.hiw-packet { fill: #1a5fa8; }
-.hiw-edge-label { position: absolute; z-index: 1000; pointer-events: none; background: #1a5fa8; color: #fff; font-size: 12px; padding: 4px 9px; border-radius: 6px; white-space: nowrap; font-family: 'Noto Sans KR', sans-serif; }
+/* 흐름 무대 */
+.hiw-stage { background: #fff; border: 1px solid #e3e6ea; border-radius: 14px; padding: 18px 18px 12px; overflow-x: auto; }
+.hiw-stage-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4%; min-width: 760px; align-items: stretch; }
+.hiw-actor { border: 2px solid #d6dae0; border-radius: 14px; background: #fafbfc; display: flex; flex-direction: column; min-height: 330px; transition: border-color 0.3s, box-shadow 0.3s, opacity 0.3s; }
+.hiw-actor.idle { opacity: 0.4; }
+.hiw-actor.busy { border-color: #1a5fa8; box-shadow: 0 6px 22px rgba(26, 95, 168, 0.18); background: #fff; }
+.hiw-actor-head { padding: 12px 14px 10px; border-bottom: 1px solid #e8ebef; }
+.hiw-actor-title { font-size: 17px; font-weight: 700; }
+.hiw-actor-role { font-size: 12.5px; color: #6b7280; margin-top: 2px; }
+.hiw-ops { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.hiw-op-empty { font-size: 13px; color: #9aa1ab; padding: 8px 4px; }
+.hiw-op { border-radius: 10px; padding: 9px 11px; border: 1px solid #e3e6ea; background: #fff; transition: all 0.35s; }
+.hiw-op.todo { opacity: 0.38; }
+.hiw-op.now { border-color: #1a5fa8; background: #eef5fd; box-shadow: 0 0 0 3px rgba(26, 95, 168, 0.15); transform: scale(1.02); }
+.hiw-op.done { border-color: #d6e4f3; }
+.hiw-op-text { font-size: 14px; font-weight: 600; color: #1d2330; line-height: 1.45; }
+.hiw-op-val { margin-top: 5px; font-size: 13px; color: #1a5fa8; word-break: break-all; animation: hiw-pop 0.4s ease-out; }
+.hiw-op-val.good { color: #067647; }
+.hiw-op-val.bad { color: #b42318; }
+@keyframes hiw-pop { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+.hiw-op-val.mono, .hiw-packet-val.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+
+/* 네트워크 통로와 데이터 카드 */
+.hiw-lane { position: relative; height: 118px; min-width: 760px; }
+.hiw-lane-line { position: absolute; left: 16.5%; right: 16.5%; top: 34px; border-top: 2px dashed #cfd4db; }
+.hiw-lane-name { position: absolute; left: 50%; top: 40px; transform: translateX(-50%); font-size: 11.5px; color: #9aa1ab; }
+.hiw-stub { position: absolute; top: 0; width: 0; height: 34px; border-left: 2px dashed #cfd4db; transition: border-color 0.3s; }
+.hiw-stub.on { border-left: 2px solid #1a5fa8; }
+.hiw-packet-card { position: absolute; top: 12px; transform: translateX(-50%); min-width: 190px; max-width: 280px; background: #1a5fa8; color: #fff; border-radius: 10px; padding: 8px 12px; box-shadow: 0 8px 20px rgba(26, 95, 168, 0.3); transition: left 2s cubic-bezier(0.45, 0, 0.3, 1), opacity 0.4s; z-index: 2; }
+.hiw-packet-card.arrived { opacity: 0.55; }
+.hiw-packet-dir { font-size: 11px; opacity: 0.8; }
+.hiw-packet-title { font-size: 14px; font-weight: 700; margin-top: 1px; }
+.hiw-packet-val { font-size: 12.5px; opacity: 0.92; margin-top: 2px; word-break: break-all; }
+
+/* 지금 일어나는 일 */
+.hiw-caption { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #eef0f3; padding-top: 12px; min-height: 52px; }
+.hiw-caption-text { font-size: 15px; color: #1d2330; line-height: 1.55; }
+.hiw-caption-who { display: inline-block; font-size: 12px; font-weight: 700; color: #fff; background: #1d2330; border-radius: 6px; padding: 2px 8px; margin-right: 8px; vertical-align: 1px; }
+.hiw-caption-ctrl { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.hiw-beat-no { font-size: 12.5px; color: #6b7280; }
+.hiw-btn.small { padding: 6px 12px; font-size: 12.5px; }
 
 /* 누가 무엇을 아는가 */
 .hiw-knows { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 14px 16px; }

@@ -1,6 +1,7 @@
 // 작동 원리 보기: 플로우차트 + 단계 설명 + 자세히 보기 + 직접 해 보기 + 누가 무엇을 아는가 + 공격 시도
 import { useEffect, useState } from "react";
-import FlowDiagram from "../components/flow/FlowDiagram";
+import FlowStage from "../components/flow/FlowStage";
+import { makeSample } from "../components/flow/sample";
 import TryIt from "../components/flow/TryIt";
 import AttackPanel from "../components/flow/AttackPanel";
 import { STEPS, ACTORS } from "../components/flow/steps";
@@ -52,6 +53,13 @@ export default function HowItWorksPage({ onBack }) {
   const [index, setIndex] = useState(0);
   const [openFold, setOpenFold] = useState(""); // "단계번호:detail" 처럼 단계별로 따로 (넘기면 자동으로 닫힘)
   const [lab, setLab] = useState({}); // 직접 해 보기 결과를 단계 사이에 이어서 쓴다
+  const [sample, setSample] = useState(null); // 흐름도에 보여 줄 실제 계산 값
+
+  useEffect(() => {
+    let alive = true;
+    makeSample().then((s) => alive && setSample(s)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const step = STEPS[index];
 
   const showDetail = openFold === `${index}:detail`;
@@ -78,7 +86,7 @@ export default function HowItWorksPage({ onBack }) {
 
       <div className="hiw-main">
         <div className="hiw-left">
-          <FlowDiagram step={step} />
+          <FlowStage step={step} sample={sample} />
           <KnowsTable step={step} />
         </div>
 

@@ -66,8 +66,12 @@ services:
     env_file: [demo.env]
     environment:
       SEED_API_URL: http://server:8080
+      VOTE_WASM: /repo/vote-circuit/voteProof.wasm
+      VOTE_ZKEY: /repo/vote-circuit/voteProof_final.zkey
     working_dir: /repo/server
     command: ["node", "scripts/demoSeed.js"]
+    volumes:
+      - ../front/user/public:/repo/vote-circuit:ro   # 투표 증명 회로 파일 (미리 투표용)
     restart: "no"
 
   front:

@@ -1,22 +1,63 @@
 {
-  "admin": { "email": "admin@demo.jnu", "label": "선거 관리자" },
+  "admin": {
+    "email": "admin@demo.jnu",
+    "label": "선거 관리자"
+  },
   "students": [
-    { "email": "20260001@stu.jejunu.ac.kr", "student_id": "20260001", "label": "학생 1" },
-    { "email": "20260002@stu.jejunu.ac.kr", "student_id": "20260002", "label": "학생 2" },
-    { "email": "20260003@stu.jejunu.ac.kr", "student_id": "20260003", "label": "학생 3" },
-    { "email": "20260004@stu.jejunu.ac.kr", "student_id": "20260004", "label": "학생 4" },
-    { "email": "20260005@stu.jejunu.ac.kr", "student_id": "20260005", "label": "학생 5" }
+    {
+      "email": "20260001@stu.jejunu.ac.kr",
+      "student_id": "20260001",
+      "label": "학생 1"
+    },
+    {
+      "email": "20260002@stu.jejunu.ac.kr",
+      "student_id": "20260002",
+      "label": "학생 2"
+    },
+    {
+      "email": "20260003@stu.jejunu.ac.kr",
+      "student_id": "20260003",
+      "label": "학생 3"
+    },
+    {
+      "email": "20260004@stu.jejunu.ac.kr",
+      "student_id": "20260004",
+      "label": "학생 4"
+    },
+    {
+      "email": "20260005@stu.jejunu.ac.kr",
+      "student_id": "20260005",
+      "label": "학생 5"
+    }
   ],
-  "outsider": { "email": "20269999@stu.jejunu.ac.kr", "student_id": "20269999", "label": "명단에 없는 학생 (거절 확인용)" },
+  "outsider": {
+    "email": "20269999@stu.jejunu.ac.kr",
+    "student_id": "20269999",
+    "label": "명단에 없는 학생 (거절 확인용)"
+  },
   "elections": [
     {
       "title": "2026 총학생회장 선거 (데모)",
-      "description": "체험용 선거입니다. 학생 1~5만 투표할 수 있습니다.",
+      "description": "체험용 선거입니다. 학생 1~5가 투표할 수 있고, 다른 학생 3명이 미리 투표해 두었습니다 (공격 시도용).",
       "start": true,
       "candidates": [
-        { "name": "기호 0 김한라", "description": "컴퓨터공학과" },
-        { "name": "기호 1 이백록", "description": "경영학과" },
-        { "name": "기호 2 박돌담", "description": "해양생명과학과" }
+        {
+          "name": "기호 0 김한라",
+          "description": "컴퓨터공학과"
+        },
+        {
+          "name": "기호 1 이백록",
+          "description": "경영학과"
+        },
+        {
+          "name": "기호 2 박돌담",
+          "description": "해양생명과학과"
+        }
+      ],
+      "seed_votes": [
+        0,
+        1,
+        2
       ]
     },
     {
@@ -24,9 +65,76 @@
       "description": "아직 시작 전인 선거입니다. 투표 키를 미리 등록하거나 다시 등록해 볼 수 있습니다.",
       "start": false,
       "candidates": [
-        { "name": "기호 0 오름", "description": "3학년" },
-        { "name": "기호 1 바당", "description": "2학년" }
+        {
+          "name": "기호 0 오름",
+          "description": "3학년"
+        },
+        {
+          "name": "기호 1 바당",
+          "description": "2학년"
+        }
+      ],
+      "seed_votes": []
+    },
+    {
+      "title": "동아리연합회장 선거 (개표 완료, 데모)",
+      "description": "투표와 개표가 이미 끝난 선거입니다. 결과와 체인에 기록된 개표 증명을 볼 수 있습니다.",
+      "start": true,
+      "seed_votes": [
+        0,
+        1,
+        1,
+        0,
+        1,
+        2
+      ],
+      "tally": true,
+      "candidates": [
+        {
+          "name": "기호 0 한라봉",
+          "description": "밴드 동아리"
+        },
+        {
+          "name": "기호 1 감귤",
+          "description": "사진 동아리"
+        },
+        {
+          "name": "기호 2 귤빛",
+          "description": "봉사 동아리"
+        }
       ]
+    }
+  ],
+  "seed_voters": [
+    {
+      "email": "20260101@stu.jejunu.ac.kr",
+      "student_id": "20260101",
+      "label": "미리 투표한 학생 1"
+    },
+    {
+      "email": "20260102@stu.jejunu.ac.kr",
+      "student_id": "20260102",
+      "label": "미리 투표한 학생 2"
+    },
+    {
+      "email": "20260103@stu.jejunu.ac.kr",
+      "student_id": "20260103",
+      "label": "미리 투표한 학생 3"
+    },
+    {
+      "email": "20260104@stu.jejunu.ac.kr",
+      "student_id": "20260104",
+      "label": "미리 투표한 학생 4"
+    },
+    {
+      "email": "20260105@stu.jejunu.ac.kr",
+      "student_id": "20260105",
+      "label": "미리 투표한 학생 5"
+    },
+    {
+      "email": "20260106@stu.jejunu.ac.kr",
+      "student_id": "20260106",
+      "label": "미리 투표한 학생 6"
     }
   ]
 }

@@ -29,7 +29,7 @@
 | deployer | 검증 컨트랙트 2개 → VotingToken·VotingSystem 원본 → PoseidonHasher → ElectionFactory 배포 (이미 있으면 건너뜀) |
 | mysql | `server/src/db/schema.sql` 로 초기화 |
 | server | `DEMO_MODE=1` 서버 (`demo/demo.env`) |
-| seed | 데모 학생 재학 인증 승인 + 선거 2개(진행 중 1, 예정 1) 생성·배포·명단 등록 |
+| seed | 데모 학생 재학 인증 승인 + 선거 3개(진행 중 1, 예정 1, 개표 완료 1) 생성·배포·명단 등록. "미리 투표한 학생"(`seed_voters`)이 실제 투표 증명으로 진행 중 선거에 3표, 개표 완료 선거에 6표를 넣고, 개표 완료 선거는 종료·개표까지 한다 (처음 실행 시 2~3분) |
 | front | 화면 (오른쪽 아래 '체험 안내' 패널, '체인 검증 보기') |
 
 ## 데모 모드에서 달라지는 것 (`DEMO_MODE=1` 일 때만)

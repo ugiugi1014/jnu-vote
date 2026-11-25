@@ -1,5 +1,7 @@
+import { BEATS } from "./beats";
+
 // 작동 원리 화면의 단계 정의
-//  nodes: 플로우차트에서 밝게 할 노드, edges: 이번 단계에 데이터가 오가는 연결 (label = 오가는 것)
+//  nodes: 이번 단계에 관여하는 주체 (아는 것 표에서 강조), 재생 순서는 beats.js
 //  knows: "누가 무엇을 아는가" 표 (✓ 아는 것, ✗ 모르는 것)
 //  detail: '자세히 보기'에 나오는 항목, tryIt: 직접 해 보기 종류, attacks: 공격 시도 종류
 
@@ -10,13 +12,12 @@ export const ACTORS = [
   { id: "outsider", label: "외부 관찰자" },
 ];
 
-export const STEPS = [
+const RAW_STEPS = [
   {
     id: "login",
     title: "로그인과 재학 인증",
     desc: "학교 웹메일로 로그인하고 재학증명서로 재학 여부를 확인합니다. 서버는 이 학생이 누구인지(학번)와 이 선거의 명단에 있는지를 확인합니다.",
     nodes: ["student", "server"],
-    edges: [{ id: "student-server", label: "웹메일 인증 · 재학증명" }],
     knows: {
       student: ["✓ 내 학번"],
       server: ["✓ 학번 · 이메일", "✓ 명단 포함 여부"],
@@ -33,7 +34,6 @@ export const STEPS = [
     title: "투표 키 만들기",
     desc: "학생 브라우저가 나만 아는 비밀값(secret)을 만들고, 그 해시(commitment)만 서버에 보냅니다. secret 은 브라우저 밖으로 나가지 않습니다.",
     nodes: ["student", "server"],
-    edges: [{ id: "student-server", label: "commitment = Poseidon(secret)" }],
     knows: {
       student: ["✓ secret (나만 앎)"],
       server: ["✓ 이 학생의 commitment", "✗ secret"],
@@ -52,7 +52,6 @@ export const STEPS = [
     title: "유권자 명단에 등록",
     desc: "서버가 학번·자격을 확인한 뒤 commitment 를 체인의 유권자 명단(머클 트리)에 올립니다. 체인에는 학번이 없어서, 명단을 봐도 누구의 키인지 알 수 없습니다.",
     nodes: ["server", "chain"],
-    edges: [{ id: "server-chain", label: "registerVoter(commitment)" }],
     knows: {
       student: ["✓ secret"],
       server: ["✓ 학번 ↔ commitment 연결"],
@@ -69,7 +68,6 @@ export const STEPS = [
     title: "투표 암호화",
     desc: "체인에 고정된 관리자(코디네이터) 공개키로 고른 후보를 암호화합니다. 이 암호문은 코디네이터 개인키로만 열 수 있습니다.",
     nodes: ["student", "chain"],
-    edges: [{ id: "chain-student", label: "코디 공개키 읽기" }],
     knows: {
       student: ["✓ 내가 고른 후보"],
       server: ["✗ 후보"],
@@ -89,7 +87,6 @@ export const STEPS = [
     title: "투표 증명 만들기",
     desc: "브라우저가 영지식 증명을 만듭니다. '명단 안의 누군가가, 유효한 후보 하나를, 체인에 고정된 키로 암호화했다'를 증명하지만, 누구인지와 어느 후보인지는 드러나지 않습니다.",
     nodes: ["student"],
-    edges: [],
     knows: {
       student: ["✓ 증명 + 공개 값 9개"],
       server: ["✗ 아직 받지 않음"],
@@ -109,10 +106,6 @@ export const STEPS = [
     title: "제출과 체인 기록",
     desc: "증명과 암호문을 로그인 없이 서버(relay)에 보내면, 서버 지갑이 체인에 대신 제출합니다. 컨트랙트가 증명을 검증하고, 이미 쓰인 nullifier 면 거절합니다.",
     nodes: ["student", "server", "chain"],
-    edges: [
-      { id: "student-server", label: "증명 + 암호문 (로그인 없이)" },
-      { id: "server-chain", label: "castVote" },
-    ],
     knows: {
       student: ["✓ 내 표"],
       server: ["✓ 암호문", "✓ 요청 IP · 시간 (기록하지 않는다고 가정)", "✗ 어느 commitment 인지"],
@@ -130,7 +123,6 @@ export const STEPS = [
     title: "개표와 개표 증명",
     desc: "투표가 끝나면 관리자가 코디네이터 개인키로 표를 풀어 세고, '체인의 모든 표를 빠짐없이 정확히 셌다'는 증명을 체인에 제출합니다. 표를 빼거나 바꾸면 증명이 통과하지 못합니다.",
     nodes: ["server", "chain"],
-    edges: [{ id: "server-chain", label: "recordTallyBatch(개표 증명)" }],
     knows: {
       student: ["✓ 결과"],
       server: ["✓ 개별 표 내용 (코디 개인키)", "✗ 누구의 표인지"],
@@ -150,7 +142,6 @@ export const STEPS = [
     title: "정리: 무엇이 보장되나",
     desc: "집계가 정확한지는 누구나 체인에서 검증할 수 있습니다. 표 내용의 비밀은 관리자(코디네이터)를 신뢰합니다. 키를 여러 사람이 나눠 갖는 방식은 향후 과제입니다.",
     nodes: ["student", "server", "chain"],
-    edges: [],
     knows: {
       student: ["✓ 내 표가 들어갔는지 (nullifier)"],
       server: ["✓ 개별 표 내용 (신뢰 필요)", "✗ 누구의 표인지"],
@@ -158,5 +149,8 @@ export const STEPS = [
       outsider: ["✓ 집계가 맞는지 검증 가능"],
     },
     summary: true,
+    stageNote: "세 주체가 각각 하는 일을 정리했습니다. 오른쪽에서 무엇이 검증으로 보장되고 무엇을 믿어야 하는지 보세요.",
   },
 ];
+
+export const STEPS = RAW_STEPS.map((s) => ({ ...s, beats: BEATS[s.id] || [] }));

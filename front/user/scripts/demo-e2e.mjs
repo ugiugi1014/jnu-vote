@@ -127,7 +127,10 @@ if (process.argv.includes('--tally')) {
   ok(t.status === 200, `개표 + 체인 기록 (${((Date.now() - t0) / 1000).toFixed(1)}s) ${t.status === 200 ? '' : JSON.stringify(t.data)}`);
   const res = (await call('GET', `/elections/${active.id}/result`)).data;
   const counts = (res.results || res.candidates || []).map((x) => Number(x.vote_count ?? x.votes ?? 0));
-  ok(JSON.stringify(counts.slice(0, 3)) === JSON.stringify([2, 2, 1]), `결과 2/2/1 → ${JSON.stringify(counts)}`);
+  // 시드가 미리 넣은 표 + 이 스크립트의 학생 표
+  const expected = [0, 0, 0];
+  for (const c of [...(accounts.elections.find((x) => x.start && !x.tally)?.seed_votes || []), ...choices]) expected[c]++;
+  ok(JSON.stringify(counts.slice(0, 3)) === JSON.stringify(expected), `결과 ${expected.join('/')} → ${JSON.stringify(counts)}`);
   const vs = new ethers.Contract(active.contract_address, abi, provider);
   ok(await vs.tallied(), '체인에 개표 증명 기록됨 (tallied)');
 }
