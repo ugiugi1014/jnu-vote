@@ -29,20 +29,13 @@ function Summary() {
   return (
     <div className="hiw-summary">
       <div className="hiw-sum-col ok">
-        <strong>확인으로 보장 (믿을 필요 없음)</strong>
+        <strong>누구나 확인할 수 있는 것</strong>
         <ul>
           <li>명단에 있는 사람만, 한 번씩만 투표</li>
           <li>블록체인의 모든 표가 빠짐없이 정확히 개표</li>
           <li>관리자가 표를 빼거나 바꾸면 개표 기록이 거절</li>
           <li>관리자 공개키는 블록체인에 고정 (몰래 바꿀 수 없음)</li>
-        </ul>
-      </div>
-      <div className="hiw-sum-col trust">
-        <strong>관리자(서버)를 신뢰</strong>
-        <ul>
-          <li>개별 표 내용: 관리자 개인키로 열 수 있음</li>
-          <li>대신 제출할 때 IP·시간으로 투표자를 추측하지 않음</li>
-          <li>향후 과제: 열쇠를 여러 사람이 나눠 갖기</li>
+          <li>누가 누구를 뽑았는지는 서버·블록체인 어디에도 남지 않음</li>
         </ul>
       </div>
     </div>
@@ -51,7 +44,7 @@ function Summary() {
 
 export default function HowItWorksPage({ onBack }) {
   const [index, setIndex] = useState(0);
-  const [openFold, setOpenFold] = useState(""); // "단계번호:detail" 처럼 단계별로 따로 (넘기면 자동으로 닫힘)
+  const [openFold, setOpenFold] = useState({}); // { "단계번호:detail": true } — 자세히 보기·직접 해 보기를 따로 펼침 (단계를 넘기면 닫힌 상태)
   const [lab, setLab] = useState({}); // 직접 해 보기 결과를 단계 사이에 이어서 쓴다
   const [sample, setSample] = useState(null); // 흐름도에 보여 줄 실제 계산 값
   const [showFormula, setShowFormula] = useState(false); // 공식·함수 이름 보기 (전시 기본값: 끔)
@@ -63,9 +56,9 @@ export default function HowItWorksPage({ onBack }) {
   }, []);
   const step = STEPS[index];
 
-  const showDetail = openFold === `${index}:detail`;
-  const showTry = openFold === `${index}:try`;
-  const toggle = (name) => setOpenFold((cur) => (cur === `${index}:${name}` ? "" : `${index}:${name}`));
+  const showDetail = !!openFold[`${index}:detail`];
+  const showTry = !!openFold[`${index}:try`];
+  const toggle = (name) => setOpenFold((cur) => ({ ...cur, [`${index}:${name}`]: !cur[`${index}:${name}`] }));
 
   useEffect(() => {
     const onKey = (e) => {
@@ -90,15 +83,21 @@ export default function HowItWorksPage({ onBack }) {
       </header>
 
       <div className="hiw-main">
-        <div className="hiw-left">
-          <FlowStage step={step} sample={sample} showFormula={showFormula} />
-          <KnowsTable step={step} />
-        </div>
-
         <aside className="hiw-panel">
           <div className="hiw-step-no">{index + 1} / {STEPS.length}</div>
           <h2>{step.title}</h2>
           <p className="hiw-desc">{step.desc}</p>
+
+          {step.why.length > 0 && (
+            <div className="hiw-why">
+              {step.why.map(([q, a]) => (
+                <div key={q} className="hiw-why-item">
+                  <div className="hiw-why-q">{q}</div>
+                  <div className="hiw-why-a">{a}</div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {step.summary && <Summary />}
 
@@ -133,6 +132,12 @@ export default function HowItWorksPage({ onBack }) {
             </div>
           )}
         </aside>
+
+        <div className="hiw-left">
+          <FlowStage step={step} sample={sample} showFormula={showFormula} />
+          <KnowsTable step={step} />
+        </div>
+
       </div>
 
       <nav className="hiw-nav">

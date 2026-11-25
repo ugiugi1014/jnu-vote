@@ -9,7 +9,6 @@ export const BEATS = {
     { app: { s: "login", email: true }, at: "student", text: "학교 웹메일 입력", value: "20260001@stu.jejunu.ac.kr", note: "학교 웹메일 주소를 넣습니다." },
     { app: { s: "login", email: true, tap: "send" }, send: ["student", "server"], text: "웹메일 주소", value: "20260001@stu…", note: "서버가 이 주소로 인증 코드를 보냅니다." },
     { app: { s: "code", tap: "login" }, at: "server", text: "인증 코드 확인", value: "일치", ok: true, note: "메일로 받은 코드가 맞는지 확인합니다." },
-    { app: { s: "code", busy: "로그인 중" }, at: "server", text: "블록체인 지갑 복원", f: "HKDF(웹메일 + 서버 시크릿)", value: "매번 같은 지갑", note: "학생이 지갑을 따로 관리하지 않아도 로그인할 때마다 같은 지갑이 만들어집니다." },
     { app: { s: "list", unverified: true }, send: ["server", "student"], text: "로그인 완료", f: "JWT", value: "로그인 토큰", note: "로그인됐습니다. 아직 재학 인증 전입니다." },
   ],
   verify: [
@@ -60,7 +59,7 @@ export const BEATS = {
   tally: [
     { app: { s: "closed" }, at: "server", text: "투표 종료", f: "closeElection()", value: "더 이상 표를 받지 않음", note: "블록체인에서 선거가 닫힙니다." },
     { app: { s: "closed" }, send: ["chain", "server"], text: "블록체인의 잠긴 표 전부", value: "표 n개", note: "개표는 서버에 따로 둔 표가 아니라 블록체인에 있는 표를 그대로 씁니다." },
-    { app: { s: "closed" }, at: "server", text: "관리자 개인키로 표 열기 · 세기", f: "코디네이터 개인키로 복호화", value: "예) 기호 0: 3 · 기호 1: 3 · 기호 2: 2", note: "여기서 관리자는 표 내용을 볼 수 있습니다. 누가 낸 표인지는 모릅니다." },
+    { app: { s: "closed" }, at: "server", text: "관리자 개인키로 표 열기 · 세기", f: "코디네이터 개인키로 복호화", value: "예) 기호 0: 3 · 기호 1: 3 · 기호 2: 2", note: "표를 연 관리자도 누가 낸 표인지는 알 수 없습니다." },
     { app: { s: "closed" }, at: "server", text: "빠짐없이 정확히 셌다는 증명 만들기", f: "개표 영지식 증명 (50표씩, 129,140 제약)", value: "증명 안에서 자물쇠를 직접 다시 만듦", note: "관리자가 표를 빼거나 다른 열쇠를 넣으면 증명이 만들어지지 않습니다." },
     { app: { s: "closed" }, send: ["server", "chain"], text: "증명 + 득표", f: "recordTallyBatch(...)", value: "공개 값 160개", note: "증명과 득표를 블록체인에 올립니다." },
     { app: { s: "closed" }, at: "chain", text: "블록체인의 표로 셌는지", f: "증명 입력 = 저장된 암호문·공개키", value: "일치", ok: true, note: "다른 표로 증명하면 여기서 거절됩니다." },

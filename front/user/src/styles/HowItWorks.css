@@ -6,7 +6,7 @@
 .hiw-back { background: none; border: none; font: inherit; font-size: 14px; color: #444; cursor: pointer; padding: 4px 0; }
 .hiw-back:hover { color: #111; }
 
-.hiw-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; padding: 12px 28px; align-items: start; }
+.hiw-main { flex: 1; display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 18px; padding: 12px 28px; align-items: start; }
 .hiw-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 /* 흐름 무대 */
@@ -211,3 +211,9 @@
 .hiw-formula-toggle input { accent-color: #1a5fa8; }
 .hiw-op-f { margin-top: 3px; font-size: 12px; color: #8a919b; font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
 .hiw-packet-f { font-size: 11.5px; opacity: 0.75; font-family: ui-monospace, Consolas, monospace; }
+
+/* 왜 그렇게 하나요 */
+.hiw-why { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.hiw-why-item { border-left: 3px solid #1a5fa8; padding: 2px 0 2px 12px; }
+.hiw-why-q { font-size: 14.5px; font-weight: 700; color: #1d2330; }
+.hiw-why-a { font-size: 14px; color: #4b5563; line-height: 1.65; margin-top: 3px; }
