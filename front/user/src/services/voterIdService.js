@@ -187,3 +187,19 @@ export async function buildMerkleProof(commitments, leaf) {
   }
   return { root: level[0], pathElements, pathIndices, leafIndex };
 }
+
+/** 로그아웃 시: 이 브라우저에 남긴 투표권 바탕값(고유값 + 예전 방식의 선거별 값)을 모두 지운다 */
+export function clearVoterKeys(storage) {
+  const st = getStorage(storage);
+  if (!st) return;
+  try {
+    const keys = [];
+    for (let i = 0; i < st.length; i++) {
+      const k = st.key(i);
+      if (k === SEED_KEY || k?.startsWith("jnu-vote:voter-secret:")) keys.push(k);
+    }
+    keys.forEach((k) => st.removeItem(k));
+  } catch {
+    /* 무시 */
+  }
+}

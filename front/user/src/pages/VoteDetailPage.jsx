@@ -9,6 +9,7 @@ import {
 import { isPasskeyLikelySupported, createPasskeySeed, restorePasskeySeed, PasskeyPrfUnsupportedError } from '../services/passkeyService';
 import { ethers } from 'ethers';
 import VotingSystemABI from '../abi/VotingSystem.json';
+import { getDemoInfo } from '../services/demoInfo';
 //import { CANDIDATES } from "../data/mockData"; //후보자 목록 mock 데이터
 import "../styles/VoteDetailPage.css";
 
@@ -62,6 +63,7 @@ export default function VoteDetailPage({ vote, onBack, token }) {
   const [recovery, setRecovery] = useState(null);              // { bytes, code } 새 복구 코드 표시용
   const [recoverySaved, setRecoverySaved] = useState(false);
   const [restoreInput, setRestoreInput] = useState("");
+  const [autoKey, setAutoKey] = useState(false);               // 전시 모드: 투표권을 화면 없이 자동으로 만든 경우
 
   // 증명용 회로 파일을 미리 받아둔다 (워커에서 백그라운드로)
   useEffect(() => {
@@ -111,6 +113,16 @@ export default function VoteDetailPage({ vote, onBack, token }) {
         if (secret) {
           await registerSecret(address, secret, false);
           if (!cancelled) setIdStatus("ready");
+          return;
+        }
+        // 전시 모드: 공용 기기라 패스키·복구 코드 단계를 건너뛰고 투표권을 바로 만든다 (로그아웃하면 지워짐)
+        if ((await getDemoInfo()).exhibition) {
+          if (cancelled) return;
+          setIdStatus("registering");
+          const seed = bytesToField(newRecoveryBytes());
+          saveSeed(seed, "exhibition");
+          await registerSecret(address, await deriveSecret(seed, address), false);
+          if (!cancelled) { setAutoKey(true); setIdStatus("ready"); }
           return;
         }
         setIdStatus("setup");
@@ -338,6 +350,9 @@ export default function VoteDetailPage({ vote, onBack, token }) {
         )}
         {idStatus === "registering" && (
           <div className="warning-banner">익명 투표권을 등록하고 있습니다...</div>
+        )}
+        {idStatus === "ready" && autoKey && electionInfo.status !== "pending" && (
+          <div className="warning-banner">투표권이 만들어져 유권자 명단에 등록됐습니다. 후보를 골라 투표하세요.</div>
         )}
         {idStatus === "ready" && electionInfo.status === "pending" && (
           <div className="warning-banner">투표권 등록이 끝났습니다. 투표가 시작되면 다시 들어와 주세요.</div>

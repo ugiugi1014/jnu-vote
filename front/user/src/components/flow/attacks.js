@@ -91,7 +91,7 @@ async function connect() {
   } catch {
     return null;
   }
-  const elections = await fetch(`${API}/elections`).then((r) => r.json()).catch(() => []);
+  const elections = await fetch(`${API}/elections?include_hidden=1`).then((r) => r.json()).catch(() => []);
   return { provider, elections: (elections || []).filter((e) => e.contract_address) };
 }
 

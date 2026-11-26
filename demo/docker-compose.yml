@@ -1,6 +1,7 @@
 # jnu-vote 데모 (로컬 체인 + DB + 서버 + 화면)
-#   시작:   demo/start.cmd (Windows) 또는 sh demo/start.sh
-#   초기화: demo/reset.cmd 또는 sh demo/reset.sh
+#   심사 모드: demo/start.cmd (Windows) 또는 sh demo/start.sh,   초기화: demo/reset.cmd
+#   전시 모드: demo/start-exhibition.cmd 또는 sh demo/start-exhibition.sh,   초기화: demo/reset-exhibition.cmd
+#              (EXHIBITION_MODE=1, 프로젝트 이름이 달라 심사 모드와 데이터가 섞이지 않음. 운영자 코드는 demo/.env)
 #   접속:   http://localhost:5173
 name: jnu-vote-demo
 
@@ -47,6 +48,8 @@ services:
     env_file: [demo.env]
     environment:
       TZ: Asia/Seoul
+      EXHIBITION_MODE: ${EXHIBITION_MODE:-0}
+      EXHIBITION_ADMIN_CODE: ${EXHIBITION_ADMIN_CODE:-}
     working_dir: /repo/server
     command: ["sh", "-c", "set -a && . /shared/deployment.env && set +a && node src/index.js"]
     ports: ["8080:8080"]
@@ -65,6 +68,8 @@ services:
       server: { condition: service_healthy }
     env_file: [demo.env]
     environment:
+      TZ: Asia/Seoul
+      EXHIBITION_MODE: ${EXHIBITION_MODE:-0}
       SEED_API_URL: http://server:8080
       VOTE_WASM: /repo/vote-circuit/voteProof.wasm
       VOTE_ZKEY: /repo/vote-circuit/voteProof_final.zkey
@@ -72,6 +77,7 @@ services:
     command: ["node", "scripts/demoSeed.js"]
     volumes:
       - ../front/user/public:/repo/vote-circuit:ro   # 투표 증명 회로 파일 (미리 투표용)
+      - ./exhibition.json:/repo/demo/exhibition.json:ro   # 전시 투표 목록 (고치면 이미지를 다시 만들지 않아도 반영)
     restart: "no"
 
   front:

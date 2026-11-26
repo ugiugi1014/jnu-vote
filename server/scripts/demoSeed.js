@@ -15,7 +15,11 @@ const API = process.env.SEED_API_URL || `http://localhost:${process.env.PORT || 
 const accounts = JSON.parse(fs.readFileSync(process.env.DEMO_ACCOUNTS_FILE, "utf8"));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const fmt = (d) => d.toISOString().slice(0, 19).replace("T", " ");
+// 서버·DB 는 한국 시간(TZ=Asia/Seoul)이라 날짜를 한국 시간 문자열로 보낸다
+const fmt = (d) => {
+  const k = new Date(d.getTime() + 9 * 3600_000);
+  return k.toISOString().slice(0, 19).replace("T", " ");
+};
 
 async function waitForServer() {
   for (let i = 0; i < 120; i++) {
@@ -68,6 +72,28 @@ async function main() {
     if (!r.ok) throw new Error(`${method} ${path} 실패 (${r.status}): ${data.message || ""} ${data.error || ""}`);
     return data;
   };
+
+  // 전시 모드: demo/exhibition.json 의 투표만 만든다 (시작은 서버가 시각에 맞춰 자동, 명단은 관람객이 로그인할 때 자동)
+  if (process.env.EXHIBITION_MODE === "1") {
+    const file = process.env.EXHIBITION_FILE || "/repo/demo/exhibition.json";
+    const { polls } = JSON.parse(require("fs").readFileSync(file, "utf8"));
+    const [ex] = await db.query(`SELECT title FROM elections`);
+    const have = new Set(ex.map((r) => r.title));
+    for (const p of polls) {
+      if (have.has(p.title)) {
+        console.log(`[seed] 이미 있음: ${p.title}`);
+        continue;
+      }
+      const created = await api("POST", "/elections", { title: p.title, description: p.description, start_time: p.start, end_time: p.end });
+      const id = created.election_id;
+      await api("PUT", `/elections/${id}/candidates/bulk`, {
+        candidates: p.candidates.map((c, i) => ({ ...c, candidate_index: i })),
+      });
+      await api("POST", `/elections/${id}/deploy`);
+      console.log(`[seed] 전시 투표 ${p.title} (${p.start} ~ ${p.end})`);
+    }
+    console.log("[seed] 전시 투표 준비 끝. 이어서 공격 시도용 숨은 선거를 준비합니다 (투표 목록에는 안 보임)");
+  }
 
   const [rows] = await db.query(`SELECT id, title, status, contract_address FROM elections`);
   const existing = new Map(rows.map((r) => [r.title, r]));

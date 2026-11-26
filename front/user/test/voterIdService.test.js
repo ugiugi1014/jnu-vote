@@ -74,3 +74,17 @@ test('저장소가 막혀 있어도 예외 없이 false', () => {
   assert.strictEqual(saveSeed(1n, 'code', broken), false);
   assert.strictEqual(loadSeed(broken), null);
 });
+
+test("clearVoterKeys: 로그아웃 시 투표권 바탕값만 지운다", async () => {
+  const { clearVoterKeys } = await import("../src/services/voterIdService.js");
+  const m = new Map([["jnu-vote:voter-seed", "x"], ["jnu-vote:voter-secret:0xabc", "y"], ["other", "z"]]);
+  const st = {
+    get length() { return m.size; },
+    key: (i) => [...m.keys()][i],
+    getItem: (k) => m.get(k) ?? null,
+    setItem: (k, v) => m.set(k, v),
+    removeItem: (k) => m.delete(k),
+  };
+  clearVoterKeys(st);
+  assert.deepEqual([...m.keys()], ["other"]);
+});

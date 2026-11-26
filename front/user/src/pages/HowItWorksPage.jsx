@@ -6,6 +6,8 @@ import TryIt from "../components/flow/TryIt";
 import AttackPanel from "../components/flow/AttackPanel";
 import { ATTACKS, runAttack } from "../components/flow/attacks";
 import { durationOf } from "../components/flow/timing";
+
+const AUTOPLAY_PAUSE_MS = 4000; // 자동 재생: 한 단계 장면이 끝난 뒤 다음 단계로 넘어가기 전 쉬는 시간
 import { STEPS, ACTORS } from "../components/flow/steps";
 import "../styles/HowItWorks.css";
 
@@ -44,7 +46,8 @@ function Summary() {
   );
 }
 
-export default function HowItWorksPage({ onBack }) {
+// autoplay: 전시 대기 화면용. 단계를 스스로 넘기고, 화면을 누르면 onBack
+export default function HowItWorksPage({ onBack, autoplay = false }) {
   const [index, setIndex] = useState(0);
   const [openFold, setOpenFold] = useState({}); // { "단계번호:detail": true } — 자세히 보기·직접 해 보기를 따로 펼침 (단계를 넘기면 닫힌 상태)
   const [lab, setLab] = useState({}); // 직접 해 보기 결과를 단계 사이에 이어서 쓴다
@@ -76,6 +79,22 @@ export default function HowItWorksPage({ onBack }) {
   const toggle = (name) => setOpenFold((cur) => ({ ...cur, [`${index}:${name}`]: !cur[`${index}:${name}`] }));
 
   useEffect(() => {
+    if (!autoplay) return;
+    const beats = STEPS[index].beats;
+    const wait = beats.length ? durationOf(beats) + AUTOPLAY_PAUSE_MS : 12_000;
+    const t = setTimeout(() => setIndex((i) => (i + 1) % STEPS.length), wait);
+    return () => clearTimeout(t);
+  }, [autoplay, index]);
+
+  useEffect(() => {
+    if (!autoplay) return;
+    const exit = () => onBack?.();
+    window.addEventListener("keydown", exit);
+    return () => window.removeEventListener("keydown", exit);
+  }, [autoplay, onBack]);
+
+  useEffect(() => {
+    if (autoplay) return;
     const onKey = (e) => {
       if (e.target?.tagName === "INPUT") return;
       if (e.key === "ArrowRight") setIndex((i) => Math.min(i + 1, STEPS.length - 1));
@@ -83,10 +102,15 @@ export default function HowItWorksPage({ onBack }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [autoplay]);
 
   return (
     <div className="hiw-page">
+      {autoplay && (
+        <button className="hiw-attract" onClick={onBack} aria-label="투표 체험 시작">
+          <span className="hiw-attract-msg">화면을 누르면 투표 체험을 시작합니다</span>
+        </button>
+      )}
       <header className="hiw-top">
         {onBack && <button className="hiw-back" onClick={onBack}>← 돌아가기</button>}
         <h1>jnu-vote 작동 원리</h1>

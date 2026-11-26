@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import LoginPage from "./pages/LoginPage";
 import VoteListPage from "./pages/VoteListPage";
 import VoteDetailPage from "./pages/VoteDetailPage";
@@ -7,6 +7,8 @@ import AdminPage from "./pages/AdminPage";
 import UploadPage from "./pages/UploadPage";
 import DemoGuide from "./components/DemoGuide";
 import HowItWorksPage from "./pages/HowItWorksPage";
+import { clearVoterKeys } from "./services/voterIdService";
+import { getDemoInfo } from "./services/demoInfo";
 import "./styles/global.css";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 const AUTH_STORAGE_KEY = "jnuVote.auth";
@@ -108,6 +110,9 @@ export default function App() {
 
   const handleLogout = () => {
     clearSession();
+    // 공용 기기에서 다음 사람이 앞사람의 투표권을 이어받지 않게, 이 브라우저에 남긴 투표권 바탕값을 지운다
+    // (본인은 다음 로그인 때 패스키나 복구 코드로 되찾는다)
+    clearVoterKeys();
     setStudentId("");
     setRole("user");
     setToken(null);
@@ -175,10 +180,49 @@ export default function App() {
   const [returnPage, setReturnPage] = useState("login");
   const openHowItWorks = () => { setReturnPage(page === "howitworks" ? returnPage : page); setPage("howitworks"); };
 
+  // 전시 모드 (공용 기기 한 대)
+  //  - 로그인한 관람객이 1분 동안 아무것도 안 하면 로그아웃 (다음 사람이 앞사람 계정을 이어 쓰지 않게)
+  //  - 로그인 화면에 2분 동안 아무도 없으면 작동 원리를 스스로 재생 (누르면 로그인 화면으로)
+  const [exhibition, setExhibition] = useState(false);
+  const [attract, setAttract] = useState(false);
+  useEffect(() => {
+    getDemoInfo().then((d) => setExhibition(!!d?.exhibition));
+  }, []);
+  const live = useRef({});
+  live.current = { page, token, role, logout: handleLogout };
+  useEffect(() => {
+    if (!exhibition) return;
+    let last = Date.now();
+    const bump = () => { last = Date.now(); };
+    const events = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"];
+    events.forEach((e) => window.addEventListener(e, bump, { passive: true }));
+    const iv = setInterval(() => {
+      const { page: pg, token: tk, role: rl, logout } = live.current;
+      const idle = Date.now() - last;
+      if (tk && rl !== "admin" && idle > 60_000) {
+        logout();
+        last = Date.now();
+      } else if (!tk && pg === "login" && idle > 120_000) {
+        setAttract(true);
+        setReturnPage("login");
+        setPage("howitworks");
+      }
+    }, 1000);
+    return () => {
+      clearInterval(iv);
+      events.forEach((e) => window.removeEventListener(e, bump));
+    };
+  }, [exhibition]);
+
   return (
     <>
       {page === "login" && <LoginPage onLogin={handleLogin} onHowItWorks={openHowItWorks} />}
-      {page === "howitworks" && <HowItWorksPage onBack={() => setPage(returnPage)} />}
+      {page === "howitworks" && (
+        <HowItWorksPage
+          autoplay={attract}
+          onBack={() => { setAttract(false); setPage(returnPage); }}
+        />
+      )}
       {page === "admin" && <AdminPage studentId={studentId} onLogout={handleLogout} token={token} />}
       {page === "upload" && (
         <UploadPage

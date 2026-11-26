@@ -32,6 +32,8 @@ function generateCode() {
 
 // 데모 모드 (DEMO_MODE=1): 메일을 보내지 않고 인증 코드를 응답에 담아 준다. 데모 계정만 허용.
 const { DEMO_MODE, isDemoEmail } = require("../demo");
+// 전시 모드: 아무 이메일 로그인 + 자동 재학 인증·명단 등록, 운영자는 운영자 코드로만
+const { EXHIBITION_MODE, enrollVisitor } = require("../exhibition");
 
 // 관리자 이메일 화이트리스트 (.env의 ADMIN_EMAILS 쉼표 구분)
 function isAdminEmail(email) {
@@ -59,12 +61,16 @@ router.post("/send-code", async (req, res) => {
   try {
     const { email } = req.body;
 
-    if (DEMO_MODE && (!email || (!isDemoEmail(email) && !isAdminEmail(email)))) {
+    if (EXHIBITION_MODE) {
+      if (!email || !/^[^\s@]{1,60}@[^\s@]{1,38}$/.test(email)) {
+        return res.status(400).json({ message: "이메일 형식으로 입력해 주세요. (예: 내이름@test)" });
+      }
+    } else if (DEMO_MODE && (!email || (!isDemoEmail(email) && !isAdminEmail(email)))) {
       return res.status(400).json({ message: "데모에서는 안내된 데모 계정만 사용할 수 있습니다." });
     }
 
     // 이메일 형식 확인: @stu.jejunu.ac.kr 도메인만 허용 (관리자 화이트리스트는 예외)
-    if (!email || (!email.endsWith("@stu.jejunu.ac.kr") && !isAdminEmail(email))) {
+    if (!EXHIBITION_MODE && (!email || (!email.endsWith("@stu.jejunu.ac.kr") && !isAdminEmail(email)))) {
       return res.status(400).json({ message: "제주대학교 학생 이메일(@stu.jejunu.ac.kr)만 사용 가능합니다." });
     }
 
@@ -84,8 +90,12 @@ router.post("/send-code", async (req, res) => {
       return res.status(429).json({ message: "1분 후에 다시 시도해주세요." });
     }
 
-    // 6자리 코드 생성
-    const code = generateCode();
+    // 6자리 코드 생성 (전시 모드 운영자는 운영자 코드를 직접 입력)
+    const exhibitionAdmin = EXHIBITION_MODE && isAdminEmail(email);
+    if (exhibitionAdmin && !process.env.EXHIBITION_ADMIN_CODE) {
+      return res.status(403).json({ message: "운영자 코드가 설정되지 않았습니다." });
+    }
+    const code = exhibitionAdmin ? process.env.EXHIBITION_ADMIN_CODE : generateCode();
 
     // 만료 시간: 5분 후
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
@@ -96,6 +106,9 @@ router.post("/send-code", async (req, res) => {
       [email, code, expiresAt]
     );
 
+    if (exhibitionAdmin) {
+      return res.json({ message: "운영자 코드를 입력하세요." });
+    }
     if (DEMO_MODE) {
       // 데모: 메일 대신 화면에 코드를 보여준다
       return res.json({ message: "데모 모드: 인증 코드가 자동 입력됩니다.", demo_code: code });
@@ -187,6 +200,10 @@ router.post("/verify-code", async (req, res) => {
         "INSERT INTO user_secrets (email, secret) VALUES (?, ?)",
         [email, serverSecret]
       );
+    }
+
+    if (EXHIBITION_MODE && !isAdminEmail(email)) {
+      await enrollVisitor(email);
     }
 
     const [verificationRows] = await pool.query(
@@ -293,6 +310,10 @@ router.get("/me", auth, async (req, res) => {
 
     if (secretRows.length === 0) {
       return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+    }
+
+    if (EXHIBITION_MODE && !isAdminEmail(email)) {
+      await enrollVisitor(email);
     }
 
     const [verificationRows] = await pool.query(

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getDemoInfo } from "../services/demoInfo";
 import "../styles/LoginPage.css";
 import { createWallet } from "../services/walletService.js";
 
@@ -20,6 +21,11 @@ export default function LoginPage({ onLogin, onHowItWorks }) {
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [demoNotice, setDemoNotice] = useState(false);
+  const [exhibition, setExhibition] = useState(false); // 전시 모드: 아무 이메일 로그인
+
+  useEffect(() => {
+    getDemoInfo().then((d) => setExhibition(!!d?.exhibition));
+  }, []);
 
   const normalizedEmail = email.trim().toLowerCase();
   const isEmailValid = normalizedEmail.length > 0;
@@ -138,7 +144,7 @@ export default function LoginPage({ onLogin, onHowItWorks }) {
           <input
             type="email"
             className={`form-input ${email ? "has-value" : ""}`}
-            placeholder="예: 20210001@stu.jejunu.ac.kr"
+            placeholder={exhibition ? "아무 이메일이나 (예: 내이름@test)" : "예: 20210001@stu.jejunu.ac.kr"}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={step === 2 || isLoading}
@@ -152,10 +158,10 @@ export default function LoginPage({ onLogin, onHowItWorks }) {
             <input
               type="text"
               className={`form-input ${code ? "has-value" : ""}`}
-              placeholder="이메일로 받은 6자리 코드"
+              placeholder={exhibition && !demoNotice ? "운영자 코드" : "이메일로 받은 6자리 코드"}
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              maxLength={6}
+              maxLength={10}
               disabled={isLoading}
               autoComplete="one-time-code"
             />

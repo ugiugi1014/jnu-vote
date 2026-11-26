@@ -64,6 +64,9 @@ app.get(["/demo/info", "/api/demo/info"], (req, res) => {
   const { DEMO_MODE, loadDemoAccounts } = require("./demo");
   const a = DEMO_MODE ? loadDemoAccounts() : null;
   if (!a) return res.json({ enabled: false });
+  const { EXHIBITION_MODE } = require("./exhibition");
+  // 전시 모드에서는 계정 목록을 내보내지 않는다 (관람객은 아무 이메일로 로그인, 운영자 계정은 비공개)
+  if (EXHIBITION_MODE) return res.json({ enabled: true, exhibition: true });
   res.json({ enabled: true, admin: a.admin, students: a.students, outsider: a.outsider });
 });
 
@@ -85,6 +88,7 @@ app.use("/api/verification", verificationRoutes);
 
 app.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
+  require("./exhibition").startExhibitionScheduler();
   restoreElectionSchedules().catch((err) => {
     console.error("선거 예약 복구 실패:", err);
   });

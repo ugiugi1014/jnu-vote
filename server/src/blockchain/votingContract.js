@@ -61,9 +61,21 @@ function getProvider() {
   return cachedProvider;
 }
 
+// 관리자 지갑의 트랜잭션은 한 번에 하나씩 보낸다.
+//  서버 안에서 동시에 보내면(학생 등록 + 선거 자동 시작 + 개표 등) 같은 nonce 를 집어 거절되기 때문.
+//  앞 트랜잭션이 노드에 들어간 뒤(대기열 반영) 다음 트랜잭션이 nonce 를 새로 읽는다.
+class SerialWallet extends ethers.Wallet {
+  static queue = Promise.resolve();
+  sendTransaction(tx) {
+    const run = SerialWallet.queue.then(() => super.sendTransaction(tx));
+    SerialWallet.queue = run.catch(() => {});
+    return run;
+  }
+}
+
 function getWallet() {
   if (!cachedWallet) {
-    cachedWallet = new ethers.Wallet(getAdminPrivateKey(), getProvider());
+    cachedWallet = new SerialWallet(getAdminPrivateKey(), getProvider());
   }
   return cachedWallet;
 }

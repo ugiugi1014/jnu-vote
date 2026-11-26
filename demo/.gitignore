@@ -1,2 +1,3 @@
 foundry/out/
 foundry/cache/
+.env

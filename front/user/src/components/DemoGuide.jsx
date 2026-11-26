@@ -15,6 +15,16 @@ const STEPS = [
   "'체인 검증 보기'에서 누가 누굴 뽑았는지는 안 보이지만, 표 수와 개표 증명은 체인에서 확인되는 것을 봅니다.",
 ];
 
+// 전시 모드 (관람객용): 계정 목록 없이 아무 이메일로 로그인
+const EXHIBIT_STEPS = [
+  "아무 이메일이나 입력해 로그인합니다. (예: 내이름@test) 인증 코드는 자동으로 채워집니다.",
+  "진행 중인 밸런스 게임 투표를 골라 들어갑니다.",
+  "투표권을 만들고 하나를 골라 투표합니다. 이 브라우저에서 증명을 만들어 블록체인에 제출합니다.",
+  "같은 투표에 한 번 더 투표해 보세요. 블록체인이 막습니다.",
+  "결과는 정해진 개표 시각에만 열립니다. 그 전에는 누구도 득표를 볼 수 없습니다.",
+  "다 하셨으면 로그아웃해 다음 분께 넘겨 주세요.",
+];
+
 const EXTRA = [
   "'작동 원리 보기'에서 단계별 흐름과 공격 시도(이중 투표·명단 밖 투표·개표 조작)를 바로 해 볼 수 있습니다. 시작할 때 다른 학생들이 미리 투표해 두었고, 개표까지 끝난 선거도 하나 있습니다.",
   "'종료' 탭의 동아리연합회장 선거에서 개표 결과와 체인에 기록된 개표 증명을 볼 수 있습니다.",
@@ -69,22 +79,26 @@ export default function DemoGuide({ onHowItWorks }) {
       ) : (
         <aside className="demo-guide">
           <div className="demo-guide-head">
-            <strong>체험 안내 (데모)</strong>
+            <strong>{info.exhibition ? "체험 안내" : "체험 안내 (데모)"}</strong>
             <button className="demo-close" onClick={() => setOpen(false)} aria-label="접기">접기</button>
           </div>
           <ol className="demo-steps">
-            {STEPS.map((s, i) => <li key={i}>{s}</li>)}
+            {(info.exhibition ? EXHIBIT_STEPS : STEPS).map((s, i) => <li key={i}>{s}</li>)}
           </ol>
-          <div className="demo-section-title">계정 (눌러서 복사)</div>
-          <div className="demo-accounts">
-            <Account email={info.admin.email} label={info.admin.label} />
-            {info.students.map((s) => <Account key={s.email} email={s.email} label={s.label} />)}
-            {info.outsider && <Account email={info.outsider.email} label={info.outsider.label} />}
-          </div>
-          <div className="demo-section-title">더 해 볼 것</div>
-          <ul className="demo-extra">
-            {EXTRA.map((s, i) => <li key={i}>{s}</li>)}
-          </ul>
+          {!info.exhibition && (
+            <>
+              <div className="demo-section-title">계정 (눌러서 복사)</div>
+              <div className="demo-accounts">
+                <Account email={info.admin.email} label={info.admin.label} />
+                {info.students.map((s) => <Account key={s.email} email={s.email} label={s.label} />)}
+                {info.outsider && <Account email={info.outsider.email} label={info.outsider.label} />}
+              </div>
+              <div className="demo-section-title">더 해 볼 것</div>
+              <ul className="demo-extra">
+                {EXTRA.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            </>
+          )}
           <button className="demo-verify-btn" onClick={() => setVerifyOpen(true)}>체인 검증 보기</button>
           {onHowItWorks && <button className="demo-verify-btn demo-howitworks-btn" onClick={onHowItWorks}>작동 원리 보기 (공격 시도 포함)</button>}
           <p className="demo-note">로컬 테스트 체인과 데모 데이터입니다. 실제 메일·재학증명 확인은 하지 않습니다.</p>

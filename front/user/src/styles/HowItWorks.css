@@ -235,3 +235,8 @@
 .hiw-stamp { position: absolute; z-index: 3; top: 72%; left: 50%; transform: translate(-50%, -50%) rotate(-14deg); border: 5px solid #b42318; color: #b42318; background: rgba(255, 255, 255, 0.85); font-size: 36px; font-weight: 900; letter-spacing: 6px; white-space: nowrap; padding: 4px 16px 4px 22px; border-radius: 12px; animation: hiw-stamp 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both; pointer-events: none; }
 @keyframes hiw-stamp { from { opacity: 0; transform: translate(-50%, -50%) rotate(-14deg) scale(2.2); } to { opacity: 1; transform: translate(-50%, -50%) rotate(-14deg) scale(1); } }
 .hiw-attack.on { border-color: #b42318; background: #fffafa; }
+
+/* 전시 대기 화면 (자동 재생 중) */
+.hiw-attract { position: fixed; inset: 0; z-index: 50; background: transparent; border: none; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 26px; }
+.hiw-attract-msg { background: #1d2330; color: #fff; font-size: 20px; font-weight: 700; padding: 14px 28px; border-radius: 999px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); animation: hiw-attract 2.4s ease-in-out infinite; }
+@keyframes hiw-attract { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }

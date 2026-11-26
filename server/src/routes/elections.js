@@ -128,6 +128,11 @@ router.get("/", async (req, res) => {
        ORDER BY created_at DESC`
     );
 
+    // 전시 모드: 공격 시도용 데모 선거(accounts.json)는 투표 목록에서 숨긴다. 공격 시도·체인 검증은 ?include_hidden=1 로 받는다
+    const { EXHIBITION_MODE, isHiddenElection } = require("../exhibition");
+    if (EXHIBITION_MODE && req.query.include_hidden !== "1") {
+      return res.json(rows.filter((r) => !isHiddenElection(r.title)));
+    }
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -318,8 +323,8 @@ router.post("/:id/start", auth, adminOnly, async (req, res) => {
       "function configureElection(uint256 coordPubX, uint256 coordPubY, uint256 numCandidates) external",
       "function openElection() external",
     ];
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL, undefined, { cacheTimeout: -1 }) /* 캐시를 끄지 않으면 관리자 지갑 nonce 가 겹칠 수 있음 */;
-    const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
+    // 관리자 지갑은 서버 전체에서 하나를 쓴다 (트랜잭션을 한 줄로 보내 nonce 가 겹치지 않게)
+    const adminWallet = require("../blockchain/votingContract").getWallet();
     const votingSystem = new ethers.Contract(
       election.contract_address,
       VOTING_SYSTEM_ABI,
@@ -1286,8 +1291,8 @@ router.post("/:id/deploy", auth, adminOnly, async (req, res) => {
 
     const { ethers } = require("ethers");
 
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL, undefined, { cacheTimeout: -1 }) /* 캐시를 끄지 않으면 관리자 지갑 nonce 가 겹칠 수 있음 */;
-    const adminWallet = new ethers.Wallet(process.env.ADMIN_WALLET_PRIVATE_KEY, provider);
+    // 관리자 지갑은 서버 전체에서 하나를 쓴다 (트랜잭션을 한 줄로 보내 nonce 가 겹치지 않게)
+    const adminWallet = require("../blockchain/votingContract").getWallet();
     const factory = new ethers.Contract(
       process.env.FACTORY_ADDRESS,
       ELECTION_FACTORY_ABI,
